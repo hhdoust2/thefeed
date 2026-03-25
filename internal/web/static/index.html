@@ -357,14 +357,19 @@
                         // will push an SSE update when metadata arrives.
                         await doRefresh();
                     }
-                    autoRefreshTimer = setInterval(function() {
-                        if (selectedChannel > 0) {
-                            doRefresh();
-                        }
-                    }, 120000);
+                    startAutoRefresh();
                 }
             } catch (e) {}
             connectSSE();
+        }
+
+        function startAutoRefresh() {
+            if (autoRefreshTimer) return;
+            autoRefreshTimer = setInterval(function() {
+                if (selectedChannel > 0) {
+                    doRefresh(true);
+                }
+            }, 600000);
         }
 
         function connectSSE() {
@@ -415,7 +420,7 @@
         async function selectChannel(num) {
             selectedChannel = num;
             renderChannels();
-            await doRefresh();
+            await doRefresh(true);
             await loadMessages(num);
         }
 
@@ -534,11 +539,14 @@
             }
         }
 
-        async function doRefresh() {
+        async function doRefresh(quiet) {
             try {
                 var url = '/api/refresh';
                 if (selectedChannel > 0) {
                     url += '?channel=' + selectedChannel;
+                }
+                if (quiet) {
+                    url += (url.includes('?') ? '&' : '?') + 'quiet=1';
                 }
                 await fetch(url, {method: 'POST'});
             } catch (e) {}
@@ -604,13 +612,7 @@
                 if (channels && channels.length > 0) {
                     await selectChannel(1);
                 }
-                if (!autoRefreshTimer) {
-                    autoRefreshTimer = setInterval(function() {
-                        if (selectedChannel > 0) {
-                            fetch('/api/refresh?channel=' + selectedChannel + '&quiet=1', {method: 'POST'});
-                        }
-                    }, 120000);
-                }
+                startAutoRefresh();
             } catch (e) {
                 errEl.textContent = e.message;
                 errEl.style.display = 'block';
