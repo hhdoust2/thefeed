@@ -11,12 +11,13 @@ import (
 
 // Feed manages the block data for all channels.
 type Feed struct {
-	mu       sync.RWMutex
-	marker   [protocol.MarkerSize]byte
-	channels []string
-	blocks   map[int][][]byte
-	lastIDs  map[int]uint32
-	updated  time.Time
+	mu         sync.RWMutex
+	marker     [protocol.MarkerSize]byte
+	channels   []string
+	blocks     map[int][][]byte
+	lastIDs    map[int]uint32
+	metaBlocks [][]byte // cached metadata split into blocks
+	updated    time.Time
 }
 
 // NewFeed creates a new Feed with the given channel names.
@@ -27,6 +28,7 @@ func NewFeed(channels []string) *Feed {
 		lastIDs:  make(map[int]uint32),
 	}
 	f.rotateMarker()
+	f.rebuildMetaBlocks()
 	return f
 }
 
@@ -51,6 +53,7 @@ func (f *Feed) UpdateChannel(channelNum int, msgs []protocol.Message) {
 	f.lastIDs[channelNum] = lastID
 	f.updated = time.Now()
 	f.rotateMarker()
+	f.rebuildMetaBlocks()
 }
 
 // GetBlock returns the block data for a given channel and block number.
@@ -73,6 +76,18 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 }
 
 func (f *Feed) getMetadataBlock(block int) ([]byte, error) {
+	if len(f.metaBlocks) == 0 {
+		f.rebuildMetaBlocks()
+	}
+	if block < 0 || block >= len(f.metaBlocks) {
+		return nil, fmt.Errorf("metadata block %d out of range (%d blocks)", block, len(f.metaBlocks))
+	}
+	return f.metaBlocks[block], nil
+}
+
+// rebuildMetaBlocks re-serializes the metadata and splits it into blocks.
+// Must be called with f.mu held.
+func (f *Feed) rebuildMetaBlocks() {
 	meta := &protocol.Metadata{
 		Marker:    f.marker,
 		Timestamp: uint32(time.Now().Unix()),
@@ -93,12 +108,7 @@ func (f *Feed) getMetadataBlock(block int) ([]byte, error) {
 	}
 
 	data := protocol.SerializeMetadata(meta)
-	metaBlocks := protocol.SplitIntoBlocks(data)
-
-	if block < 0 || block >= len(metaBlocks) {
-		return nil, fmt.Errorf("metadata block %d out of range (%d blocks)", block, len(metaBlocks))
-	}
-	return metaBlocks[block], nil
+	f.metaBlocks = protocol.SplitIntoBlocks(data)
 }
 
 // ChannelNames returns the configured channel names.

@@ -349,10 +349,13 @@
                     openSettings();
                 } else {
                     document.getElementById('statusDot').className = 'status-dot connected';
-                    await doRefresh();
                     await loadChannels();
                     if (channels && channels.length > 0) {
                         await selectChannel(1);
+                    } else {
+                        // No channels cached yet; the server's initial refresh
+                        // will push an SSE update when metadata arrives.
+                        await doRefresh();
                     }
                     autoRefreshTimer = setInterval(function() {
                         if (selectedChannel > 0) {
