@@ -80,7 +80,7 @@ func NewTelegramReader(cfg TelegramConfig, channelUsernames []string, feed *Feed
 		channels: cleaned,
 		feed:     feed,
 		cache:    make(map[string]cachedMessages),
-		cacheTTL: 30 * time.Minute,
+		cacheTTL: 15 * time.Minute,
 	}
 }
 
