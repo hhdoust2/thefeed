@@ -238,7 +238,7 @@ ExecStart=${INSTALL_DIR}/thefeed-server \\
     --api-id \${TELEGRAM_API_ID} \\
     --api-hash \${TELEGRAM_API_HASH} \\
     --phone \${TELEGRAM_PHONE} \\
-    --listen \${THEFEED_LISTEN:-0.0.0.0:53}
+    --listen \${THEFEED_LISTEN}
 
 Restart=on-failure
 RestartSec=10
@@ -271,19 +271,19 @@ show_usage() {
     echo -e "┌─────────────────────────────────────────────────────┐"
     echo -e "│  ${blue}thefeed service management:${plain}                        │"
     echo -e "│                                                     │"
-    echo -e "│  ${blue}systemctl status thefeed-server${plain}   - Status          │"
-    echo -e "│  ${blue}systemctl restart thefeed-server${plain}  - Restart         │"
-    echo -e "│  ${blue}systemctl stop thefeed-server${plain}     - Stop            │"
+    echo -e "│  ${blue}systemctl status thefeed-server${plain}   - Status         │"
+    echo -e "│  ${blue}systemctl restart thefeed-server${plain}  - Restart        │"
+    echo -e "│  ${blue}systemctl stop thefeed-server${plain}     - Stop           │"
     echo -e "│  ${blue}journalctl -u thefeed-server -f${plain}  - Live logs       │"
     echo -e "│                                                     │"
-    echo -e "│  All data in: ${blue}${INSTALL_DIR}/${plain}                        │"
-    echo -e "│  ${blue}Config:${plain}   ${DATA_DIR}/thefeed.env                   │"
-    echo -e "│  ${blue}Channels:${plain} ${DATA_DIR}/channels.txt                 │"
-    echo -e "│  ${blue}Session:${plain}  ${DATA_DIR}/session.json               │"
-    echo -e "│  ${blue}Binary:${plain}   ${INSTALL_DIR}/thefeed-server         │"
+    echo -e "│  All data in: ${blue}${INSTALL_DIR}/${plain}                         │"
+    echo -e "│  ${blue}Config:${plain}   ${DATA_DIR}/thefeed.env            │"
+    echo -e "│  ${blue}Channels:${plain} ${DATA_DIR}/channels.txt           │"
+    echo -e "│  ${blue}Session:${plain}  ${DATA_DIR}/session.json           │"
+    echo -e "│  ${blue}Binary:${plain}   ${INSTALL_DIR}/thefeed-server              │"
     echo -e "│                                                     │"
-    echo -e "│  ${yellow}Update:${plain} sudo bash install.sh                      │"
-    echo -e "│  ${yellow}Re-login:${plain} sudo bash install.sh --login            │"
+    echo -e "│  ${yellow}Update:${plain} sudo bash install.sh                       │"
+    echo -e "│  ${yellow}Re-login:${plain} sudo bash install.sh --login             │"
     echo -e "└─────────────────────────────────────────────────────┘"
     echo ""
 }
