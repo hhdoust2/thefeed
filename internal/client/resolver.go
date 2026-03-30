@@ -120,7 +120,7 @@ func (rc *ResolverChecker) checkOne(resolver string) bool {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(qname), dns.TypeTXT)
 	m.RecursionDesired = true
-	m.SetEdns0(1232, false)
+	m.SetEdns0(4096, false)
 
 	resp, _, err := c.Exchange(m, resolver)
 	// We consider the resolver healthy if we get any DNS response back
