@@ -11,6 +11,7 @@
         android:layout_height="wrap_content"
         android:padding="10dp"
         android:textColor="@color/text"
+        android:visibility="gone"
         android:text="@string/webview_loading" />
 
     <WebView

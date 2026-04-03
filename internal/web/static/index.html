@@ -95,6 +95,7 @@ input,textarea,select{font-family:inherit}
 .progress-label{font-size:11px;margin-bottom:2px;color:var(--text-dim)}
 .progress-bar{width:100%;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
 .progress-fill{height:100%;background:var(--accent);transition:width .2s}
+@keyframes prog-pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .msg-copy-btn{background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0 2px;opacity:0;transition:opacity .15s;line-height:1;flex-shrink:0}.msg:hover .msg-copy-btn{opacity:1}
 
 /* ===== LOG ===== */
@@ -745,6 +746,7 @@ async function loadChannels(){
   try{
     var r=await fetch('/api/channels');channels=await r.json();if(!channels)channels=[];
     renderChannels();updateSendPanel();
+    var initBar=document.getElementById('prog-init');if(initBar)initBar.remove();
     var sr=await fetch('/api/status');var st=await sr.json();
     telegramLoggedIn=!!st.telegramLoggedIn;
     if(st.nextFetch){serverNextFetch=st.nextFetch;updateNextFetchDisplay()}
@@ -881,7 +883,7 @@ function toggleLog(){
 function showInitProgress(){
   document.getElementById('progressPanel').innerHTML='';
   var p=document.getElementById('progressPanel');
-  p.innerHTML='<div class="progress-item"><div class="progress-label">'+t('loading')+'</div><div class="progress-bar"><div class="progress-fill" style="width:30%"></div></div></div>';
+  p.innerHTML='<div class="progress-item" id="prog-init"><button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">'+t('loading')+'</div><div class="progress-bar"><div class="progress-fill" style="width:30%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div></div>';
   if(window.innerWidth<=768) openChat();
 }
 function startAutoRefresh(){if(autoRefreshTimer)return;autoRefreshTimer=setInterval(function(){if(selectedChannel>0)doRefresh(true)},600000)}

@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -63,11 +64,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun setStatus(msg: String) {
+        txtStatus.text = msg
+        txtStatus.visibility = if (msg.isEmpty()) View.GONE else View.VISIBLE
+    }
+
     private fun configureWebView() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (url != null && url.startsWith("http://127.0.0.1")) {
-                    txtStatus.text = ""
+                    setStatus("")
                 }
             }
 
@@ -79,7 +85,7 @@ class MainActivity : ComponentActivity() {
                 // Server was reachable during probe but dropped connection — retry probe cycle
                 if (request?.isForMainFrame == true) {
                     probeAttempt = 0
-                    txtStatus.text = "Reconnecting..."
+                    setStatus("Reconnecting...")
                     handler.postDelayed({ waitForServerThenLoad() }, RETRY_DELAY_MS)
                 }
             }
@@ -105,16 +111,16 @@ class MainActivity : ComponentActivity() {
         if (port <= 0) {
             if (probeAttempt < MAX_PROBE_ATTEMPTS) {
                 probeAttempt++
-                txtStatus.text = "Waiting for service... ($probeAttempt/$MAX_PROBE_ATTEMPTS)"
+                setStatus("Waiting for service... ($probeAttempt/$MAX_PROBE_ATTEMPTS)")
                 handler.postDelayed({ waitForServerThenLoad() }, PROBE_INTERVAL_MS)
             } else {
-                txtStatus.text = "Service unavailable. Restart the app."
+                setStatus("Service unavailable. Restart the app.")
             }
             return
         }
 
         val url = "http://127.0.0.1:$port"
-        txtStatus.text = "Connecting..."
+        setStatus("Connecting...")
 
         Thread {
             var ready = false
@@ -136,16 +142,16 @@ class MainActivity : ComponentActivity() {
                 }
                 Thread.sleep(PROBE_INTERVAL_MS)
                 handler.post {
-                    txtStatus.text = "Waiting for server... (${attempt + 1}/$MAX_PROBE_ATTEMPTS)"
+                    setStatus("Waiting for server... (${attempt + 1}/$MAX_PROBE_ATTEMPTS)")
                 }
             }
 
             handler.post {
                 if (ready) {
-                    txtStatus.text = ""
+                    setStatus("")
                     webView.loadUrl(url)
                 } else {
-                    txtStatus.text = "Could not connect. Restart the app."
+                    setStatus("Could not connect. Restart the app.")
                 }
             }
         }.start()
