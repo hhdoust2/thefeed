@@ -11,8 +11,22 @@ android {
         applicationId 'com.thefeed.android'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        // versionCode auto-increments from git commit count so each build can be installed over the previous one
+        versionCode = { ->
+            try {
+                "git rev-list --count HEAD".execute([], rootDir).text.trim().toInteger()
+            } catch (ignored) {
+                1
+            }
+        }()
+        versionName = { ->
+            try {
+                def tag = "git describe --tags --always --dirty".execute([], rootDir).text.trim()
+                tag ?: "dev"
+            } catch (ignored) {
+                "dev"
+            }
+        }()
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }

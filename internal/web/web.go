@@ -984,7 +984,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if pl == nil {
 			pl = &ProfileList{}
 		}
-		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug})
+		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "version": version.Version, "commit": version.Commit})
 
 	case http.MethodPost:
 		var req struct {

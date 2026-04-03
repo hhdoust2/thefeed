@@ -285,6 +285,10 @@ html[dir=ltr] .active-badge{margin-left:0;margin-right:6px}
       <button class="lang-btn" id="langEn" onclick="setLang('en')">English</button>
     </div>
   </div>
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-dim);display:flex;align-items:center;justify-content:space-between">
+    <span data-i18n="version">Version</span>
+    <span id="appVersionEl" style="font-family:monospace;color:var(--text)">-</span>
+  </div>
   <div class="modal-actions">
     <button class="btn btn-flat" onclick="closeSettings()" data-i18n="cancel">Cancel</button>
     <button class="btn btn-primary" onclick="saveSettings()" data-i18n="save">Save</button>
@@ -356,7 +360,8 @@ var I18N = {
   fa: {
     search:'جستجو...',settings:'تنظیمات',profiles:'پروفایل‌ها',
     no_channels:'کانالی وجود ندارد',loading:'در حال بارگذاری...',no_messages:'هنوز پیامی در این کانال وجود ندارد',
-    no_channels_hint:'برنامه در حال دریافت اطلاعات از سرور است...',
+    no_channels_hint:'فرایند بزودی شروع میشود',
+    scanning_resolvers:'در حال بررسی resolver‌ها',
     no_messages_hint:'برنامه در حال دریافت پیام‌ها است. لطفاً چند لحظه صبر کنید...',
     write_message:'پیام بنویسید...',configure_server:'برای شروع یک سرور راه‌اندازی کنید',
     set_up:'راه‌اندازی',switching:'در حال تغییر پروفایل...',
@@ -373,6 +378,7 @@ var I18N = {
     channel_mgmt_note:'مدیریت کانال نیاز به پشتیبانی سمت سرور دارد. اگر توسط ادمین غیرفعال شده باشد، افزودن/حذف کار نمی\u200cکند.',
     channel_mgmt_inactive:'برای مدیریت کانال\u200cها، ابتدا این پروفایل را فعال کنید.',
     channel_placeholder:'نام کاربری کانال',
+    version:'نسخه',
     edit:'ویرایش',share:'اشتراک\u200cگذاری',delete:'حذف',save:'ذخیره',cancel:'لغو',
     copied:'پیوند کپی شد!',copy:'کپی',active:'فعال',
     private:'خصوصی',no_config:'ابتدا پروفایل را ذخیره کنید',
@@ -380,7 +386,8 @@ var I18N = {
   en: {
     search:'Search...',settings:'Settings',profiles:'Profiles',
     no_channels:'No channels',loading:'Loading...',no_messages:'No messages in this channel',
-    no_channels_hint:'The app is fetching channel list from the server...',
+    no_channels_hint:'The process will start soon',
+    scanning_resolvers:'Scanning resolvers',
     no_messages_hint:'The app is trying to fetch messages. Please wait a moment...',
     write_message:'Write a message...',configure_server:'Configure a server to start reading',
     set_up:'Set Up',switching:'Switching profile...',
@@ -397,6 +404,7 @@ var I18N = {
     channel_mgmt_note:'Channel management requires server-side support. If disabled by the server admin, adding/removing channels will not work.',
     channel_mgmt_inactive:'Switch to this profile first to manage its channels.',
     channel_placeholder:'channel_username',
+    version:'Version',
     edit:'Edit',share:'Share',delete:'Delete',save:'Save',cancel:'Cancel',
     copied:'URI copied!',copy:'Copy',active:'Active',
     private:'Private',no_config:'Save a profile first',
@@ -422,7 +430,7 @@ function setLang(l){lang=l;localStorage.setItem('thefeed_lang',l);applyLang()}
 // ===== STATE =====
 var selectedChannel=0,channels=[],eventSource=null,autoRefreshTimer=null,telegramLoggedIn=false,logVisible=false;
 var serverNextFetch=0,nextFetchInterval=null,previousMsgIDs={},currentMsgTexts=[];
-var profiles=null,activeProfileId='',editingProfileId=null;
+var profiles=null,activeProfileId='',editingProfileId=null,resolverScanHint='';
 
 // ===== MOBILE NAV =====
 function openChat(){if(window.innerWidth<=768)document.getElementById('app').classList.add('chat-open')}
@@ -461,6 +469,7 @@ async function loadFontSize(){
       document.getElementById('fontSizeVal').textContent=s.fontSize;
     }
     if(s.debug)document.getElementById('cfgDebug').checked=true;
+    if(s.version){var vEl=document.getElementById('appVersionEl');if(vEl)vEl.textContent=s.version+(s.commit&&s.commit!=='unknown'?' ('+s.commit.slice(0,7)+')':'');}
   }catch(e){}
 }
 function previewFontSize(v){document.documentElement.style.setProperty('--font-size',v+'px');document.getElementById('fontSizeVal').textContent=v}
@@ -760,7 +769,7 @@ async function loadChannels(){
 
 function renderChannels(){
   var el=document.getElementById('channelList');
-  if(!channels||!channels.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px">'+t('no_channels')+'<br><span style="font-size:11px;opacity:.7">'+t('no_channels_hint')+'</span></div>';return}
+  if(!channels||!channels.length){var _hint=resolverScanHint||t('no_channels_hint');el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px">'+t('no_channels')+'<br><span id="no-ch-hint" style="font-size:11px;opacity:.7">'+_hint+'</span></div>';return}
   var pubs=[],privs=[];
   for(var i=0;i<channels.length;i++){var c=channels[i];(c.ChatType===1||c.chatType===1?privs:pubs).push({ch:c,idx:i})}
   function section(title,items){
@@ -870,8 +879,10 @@ function updateResolverScanDisplay(line){
       panel.insertBefore(item,panel.firstChild);
     }
     item.dataset.total=total;
-    item.querySelector('.progress-label').textContent='Scanning resolvers 0/'+total;
+    item.querySelector('.progress-label').textContent=t('scanning_resolvers')+' 0/'+total;
     item.querySelector('.progress-fill').style.width='0%';
+    resolverScanHint=t('scanning_resolvers')+'...';
+    var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.textContent=resolverScanHint;
     return;
   }
   if(!item)return;
@@ -880,16 +891,20 @@ function updateResolverScanDisplay(line){
   if(progMatch){
     var done=parseInt(progMatch[1]),tot=parseInt(progMatch[2]);
     var pct=Math.round((done/tot)*100);
-    item.querySelector('.progress-label').textContent='Scanning resolvers '+done+'/'+tot;
+    item.querySelector('.progress-label').textContent=t('scanning_resolvers')+' '+done+'/'+tot;
     item.querySelector('.progress-fill').style.width=pct+'%';
+    resolverScanHint=t('scanning_resolvers')+' ('+done+'/'+tot+')';
+    var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.textContent=resolverScanHint;
     return;
   }
   // RESOLVER_SCAN done K/T
   var doneMatch=line.match(/RESOLVER_SCAN done (\d+)\/(\d+)/);
   if(doneMatch){
     var healthy=parseInt(doneMatch[1]),total2=parseInt(doneMatch[2]);
-    item.querySelector('.progress-label').textContent='Resolvers ready: '+healthy+'/'+total2+' active';
+    item.querySelector('.progress-label').textContent=t('scanning_resolvers')+': '+healthy+'/'+total2+' active';
     item.querySelector('.progress-fill').style.width='100%';
+    resolverScanHint='';
+    var hintEl=document.getElementById('no-ch-hint');if(hintEl)hintEl.textContent=t('no_channels_hint');
     setTimeout(function(){if(item.parentNode)item.parentNode.removeChild(item)},2000);
   }
 }
