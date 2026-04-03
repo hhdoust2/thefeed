@@ -34,6 +34,7 @@ android {
     signingConfigs {
         // For CI: set env vars KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
         // For local: put keystore.jks next to this file and set the same env vars
+        // If neither is set, falls back to the Android debug key so every build has a consistent signature.
         release {
             def ksFile = file("keystore.jks")
             if (System.getenv("KEYSTORE_BASE64")) {
@@ -47,6 +48,13 @@ android {
                 storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
                 keyPassword System.getenv("KEY_PASSWORD") ?: ""
+            } else {
+                // No release keystore available — use debug key for consistent local builds
+                def debugStore = new File(System.getProperty("user.home"), ".android/debug.keystore")
+                storeFile debugStore
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
             }
         }
     }
