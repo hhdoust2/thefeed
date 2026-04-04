@@ -32,36 +32,26 @@ android {
     }
 
     signingConfigs {
-        // For CI: set env vars KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-        // For local: put keystore.jks next to this file and set the same env vars
-        // If neither is set, falls back to the Android debug key so every build has a consistent signature.
+        // Persistent project keystore — ensures all builds (debug & release) share the same signature
+        // so you can install updates without uninstalling first.
+        // For CI: override with env vars KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
         release {
             def ksFile = file("keystore.jks")
             def ksBase64 = System.getenv("KEYSTORE_BASE64")
             if (ksBase64) {
-                // Decode base64 keystore from env var and write it to disk for Gradle to use
                 ksFile.bytes = Base64.decoder.decode(ksBase64)
-                storeFile ksFile
-                storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
-                keyPassword System.getenv("KEY_PASSWORD") ?: ""
-            } else if (ksFile.exists()) {
-                storeFile ksFile
-                storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
-                keyPassword System.getenv("KEY_PASSWORD") ?: ""
-            } else {
-                // No release keystore available — use debug key for consistent local builds
-                def debugStore = new File(System.getProperty("user.home"), ".android/debug.keystore")
-                storeFile debugStore
-                storePassword "android"
-                keyAlias "androiddebugkey"
-                keyPassword "android"
             }
+            storeFile ksFile
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: "thefeed123"
+            keyAlias System.getenv("KEY_ALIAS") ?: "thefeed"
+            keyPassword System.getenv("KEY_PASSWORD") ?: "thefeed123"
         }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
