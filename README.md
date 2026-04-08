@@ -23,20 +23,17 @@ DNS-based feed reader for Telegram channels. Designed for environments where onl
 
 **Client** (runs inside censored network):
 - Browser-based web UI with RTL/Farsi support (VazirMatn font)
-- Configure via the web UI — no CLI flags needed
 - Sends encrypted DNS TXT queries via available resolvers
 - **Resolver scoring**: tracks per-resolver success rate and latency; healthier resolvers are preferred automatically
 - **Scatter mode**: fans out the same DNS request to multiple resolvers simultaneously and uses the fastest response (default: 2 concurrent resolvers per request)
-- **1-hour localStorage cache**: channel list and messages are cached in the browser — reopening the app shows cached data instantly while a fresh fetch runs in the background
-- Send messages to channels and private chats (requires server `--allow-manage`)
-- Channel management (add/remove channels remotely via admin commands)
+- Send messages to channels and private chats (requires server `--allow-manage` and login to telegram)
+- Channel management (add/remove channels remotely via admin commands when `--allow-manage` is enabled)
 - Message compression (deflate) for efficient transfer
 - Web UI password protection (`--password` on client)
 - New message indicators and next-fetch countdown timer
 - Channel type badges (Private/Public)
 - Media type detection (`[IMAGE]`, `[VIDEO]`, etc.)
 - Live DNS query log in the browser
-- All data (config, cache) stored next to the binary
 
 ## Anti-DPI Features
 
