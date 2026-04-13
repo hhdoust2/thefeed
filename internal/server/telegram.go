@@ -218,6 +218,9 @@ func (tr *TelegramReader) authenticate(ctx context.Context, client *telegram.Cli
 }
 
 func (tr *TelegramReader) fetchAll(ctx context.Context, api *tg.Client) {
+	log.Printf("[telegram] fetch cycle started for %d channels", len(tr.channels))
+	start := time.Now()
+	var fetched, failed int
 	for i, username := range tr.channels {
 		chNum := tr.baseCh + i
 
@@ -232,7 +235,8 @@ func (tr *TelegramReader) fetchAll(ctx context.Context, api *tg.Client) {
 		// Resolve peer to get chat type info
 		rp, err := tr.resolvePeer(ctx, api, username)
 		if err != nil {
-			log.Printf("[telegram] fetch %s: %v", username, err)
+			log.Printf("[telegram] fetch %s: resolve peer failed: %v", username, err)
+			failed++
 			continue
 		}
 
@@ -241,14 +245,16 @@ func (tr *TelegramReader) fetchAll(ctx context.Context, api *tg.Client) {
 			Limit: tr.msgLimit,
 		})
 		if err != nil {
-			log.Printf("[telegram] fetch %s: get history: %v", username, err)
+			log.Printf("[telegram] fetch %s: get history failed: %v", username, err)
+			failed++
 			continue
 		}
 
 		userNames := buildUserMap(hist)
 		msgs, err := tr.extractMessages(hist, rp.chatType, userNames)
 		if err != nil {
-			log.Printf("[telegram] fetch %s: %v", username, err)
+			log.Printf("[telegram] fetch %s: extract messages failed: %v", username, err)
+			failed++
 			continue
 		}
 
@@ -260,8 +266,10 @@ func (tr *TelegramReader) fetchAll(ctx context.Context, api *tg.Client) {
 		// Update feed with messages and chat type info
 		tr.feed.UpdateChannel(chNum, msgs)
 		tr.feed.SetChatInfo(chNum, rp.chatType, rp.canSend)
+		fetched++
 		log.Printf("[telegram] updated %s: %d messages (type=%d, canSend=%v)", username, len(msgs), rp.chatType, rp.canSend)
 	}
+	log.Printf("[telegram] fetch cycle done in %s: %d fetched, %d failed, %d total", time.Since(start).Round(time.Millisecond), fetched, failed, len(tr.channels))
 }
 
 // resolvePeer resolves a Telegram username to an InputPeer, handling channels,
@@ -388,6 +396,11 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 					}
 				}
 			}
+		}
+
+		// Mark messages that are replies.
+		if _, hasReply := msg.GetReplyTo(); hasReply {
+			text = protocol.MediaReply + "\n" + text
 		}
 
 		msgs = append(msgs, protocol.Message{
