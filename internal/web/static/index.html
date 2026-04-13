@@ -98,7 +98,7 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: var(--bg);
+      background-color: var(--bg);
       overflow: hidden;
       position: relative
     }
@@ -3621,11 +3621,12 @@
 
     // ===== BACKGROUND IMAGE =====
     function _setBg(data) {
-      var m = document.getElementById('messages');
-      m.style.backgroundImage = data ? 'url("' + data + '")' : '';
-      m.style.backgroundSize = data ? 'cover' : '';
-      m.style.backgroundPosition = data ? 'center' : '';
-      m.style.backgroundRepeat = data ? 'no-repeat' : '';
+      var ca = document.querySelector('.chat-area');
+      ca.style.backgroundImage = data ? 'url("' + data + '")' : '';
+      ca.style.backgroundSize = data ? 'cover' : '';
+      ca.style.backgroundPosition = data ? 'center' : '';
+      ca.style.backgroundRepeat = data ? 'no-repeat' : '';
+      document.getElementById('messages').style.background = data ? 'transparent' : '';
     }
     function loadBgImage() {
       var data = localStorage.getItem('thefeed_bg_image') || '';
