@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ func startLatestVersionTracker(ctx context.Context, feed *Feed) {
 	update := func() {
 		v, err := fetchLatestReleaseVersion(ctx)
 		if err != nil {
+			log.Printf("[version] check latest release failed: %v", err)
 			return
 		}
 		feed.SetLatestVersion(v)

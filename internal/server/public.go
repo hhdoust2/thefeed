@@ -110,6 +110,9 @@ func (pr *PublicReader) UpdateChannels(channels []string) {
 }
 
 func (pr *PublicReader) fetchAll(ctx context.Context) {
+	log.Printf("[public] fetch cycle started for %d channels", len(pr.channels))
+	start := time.Now()
+	var fetched, failed int
 	for i, username := range pr.channels {
 		chNum := pr.baseCh + i
 
@@ -123,6 +126,7 @@ func (pr *PublicReader) fetchAll(ctx context.Context) {
 		msgs, err := pr.fetchChannel(ctx, username)
 		if err != nil {
 			log.Printf("[public] fetch %s: %v", username, err)
+			failed++
 			continue
 		}
 
@@ -140,8 +144,10 @@ func (pr *PublicReader) fetchAll(ctx context.Context) {
 
 		pr.feed.UpdateChannel(chNum, msgs)
 		pr.feed.SetChatInfo(chNum, protocol.ChatTypeChannel, false)
+		fetched++
 		log.Printf("[public] updated %s: %d messages", username, len(msgs))
 	}
+	log.Printf("[public] fetch cycle done in %s: %d fetched, %d failed, %d total", time.Since(start).Round(time.Millisecond), fetched, failed, len(pr.channels))
 }
 
 func (pr *PublicReader) fetchChannel(ctx context.Context, username string) ([]protocol.Message, error) {

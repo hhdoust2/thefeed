@@ -84,8 +84,11 @@ func (s *Server) Run(ctx context.Context) error {
 			s.reader = reader
 			channelCtl = reader
 			go func() {
-				if err := reader.Run(ctx); err != nil {
-					log.Printf("[telegram] error: %v", err)
+				log.Println("[telegram] reader goroutine started")
+				if err := reader.Run(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("[telegram] reader goroutine STOPPED with error: %v", err)
+				} else {
+					log.Println("[telegram] reader goroutine exited")
 				}
 			}()
 		} else {
@@ -99,8 +102,11 @@ func (s *Server) Run(ctx context.Context) error {
 		publicReader := NewPublicReader(s.telegramChannels, s.feed, msgLimit, 1)
 		channelCtl = publicReader
 		go func() {
+			log.Println("[public] reader goroutine started")
 			if err := publicReader.Run(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("[public] error: %v", err)
+				log.Printf("[public] reader goroutine STOPPED with error: %v", err)
+			} else {
+				log.Println("[public] reader goroutine exited")
 			}
 		}()
 		log.Println("[server] running without Telegram login; fetching public channels via t.me")
@@ -114,8 +120,11 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		xReader = NewXPublicReader(s.xAccounts, s.feed, msgLimit, len(s.telegramChannels)+1, s.cfg.XRSSInstances)
 		go func() {
+			log.Println("[x] reader goroutine started")
 			if err := xReader.Run(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("[x] error: %v", err)
+				log.Printf("[x] reader goroutine STOPPED with error: %v", err)
+			} else {
+				log.Println("[x] reader goroutine exited")
 			}
 		}()
 		log.Printf("[server] enabled X source for %d accounts", len(s.xAccounts))

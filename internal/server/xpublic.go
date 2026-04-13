@@ -158,6 +158,10 @@ func (xr *XPublicReader) SetBaseCh(baseCh int) {
 }
 
 func (xr *XPublicReader) fetchAll(ctx context.Context) {
+	log.Printf("[x] fetch cycle started for %d accounts (instances: %v)", len(xr.accounts), xr.instances)
+	start := time.Now()
+	var fetched, failed int
+
 	xr.mu.RLock()
 	baseCh := xr.baseCh
 	xr.mu.RUnlock()
@@ -180,7 +184,8 @@ func (xr *XPublicReader) fetchAll(ctx context.Context) {
 
 		msgs, err := xr.fetchAccount(ctx, account)
 		if err != nil {
-			log.Printf("[x] fetch %s: %v", account, err)
+			log.Printf("[x] fetch @%s: all instances failed: %v", account, err)
+			failed++
 			continue
 		}
 
@@ -196,8 +201,10 @@ func (xr *XPublicReader) fetchAll(ctx context.Context) {
 		xr.mu.Unlock()
 
 		xr.feed.UpdateChannel(chNum, msgs)
+		fetched++
 		log.Printf("[x] updated @%s: %d posts", account, len(msgs))
 	}
+	log.Printf("[x] fetch cycle done in %s: %d fetched, %d failed, %d total", time.Since(start).Round(time.Millisecond), fetched, failed, len(xr.accounts))
 }
 
 func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]protocol.Message, error) {
@@ -206,6 +213,7 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 		u := strings.TrimSuffix(instance, "/") + "/" + url.PathEscape(username) + "/rss"
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
+			log.Printf("[x] @%s: instance %s: request build error: %v", username, instance, err)
 			lastErr = err
 			continue
 		}
@@ -214,6 +222,7 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 
 		resp, err := xr.client.Do(req)
 		if err != nil {
+			log.Printf("[x] @%s: instance %s: network error: %v", username, instance, err)
 			lastErr = err
 			continue
 		}
@@ -222,16 +231,19 @@ func (xr *XPublicReader) fetchAccount(ctx context.Context, username string) ([]p
 			log.Printf("[x] close response body: %v", cerr)
 		}
 		if readErr != nil {
+			log.Printf("[x] @%s: instance %s: body read error: %v", username, instance, readErr)
 			lastErr = readErr
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
+			log.Printf("[x] @%s: instance %s: HTTP %s", username, instance, resp.Status)
 			lastErr = fmt.Errorf("%s: unexpected HTTP status %s", instance, resp.Status)
 			continue
 		}
 
 		msgs, err := parseXRSSMessages(body, username)
 		if err != nil {
+			log.Printf("[x] @%s: instance %s: parse error: %v", username, instance, err)
 			lastErr = fmt.Errorf("%s: %w", instance, err)
 			continue
 		}
