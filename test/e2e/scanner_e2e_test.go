@@ -165,11 +165,23 @@ func TestE2E_Scanner_Presets(t *testing.T) {
 		t.Fatalf("GET /api/scanner/presets: expected 200, got %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
-	var lines []string
-	if err := json.NewDecoder(resp.Body).Decode(&lines); err != nil {
+	var data struct {
+		Presets []struct {
+			Name  string `json:"name"`
+			Label string `json:"label"`
+			Count int    `json:"count"`
+		} `json:"presets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(lines) == 0 {
+	if len(data.Presets) == 0 {
 		t.Error("expected non-empty presets list")
+	}
+	if data.Presets[0].Name != "ir" {
+		t.Errorf("first preset name = %q, want ir", data.Presets[0].Name)
+	}
+	if data.Presets[0].Count == 0 {
+		t.Error("expected non-zero count for ir preset")
 	}
 }

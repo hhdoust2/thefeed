@@ -14,15 +14,32 @@ func (s *Server) handleScannerPresets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	src := defaultScannerPresets
+	type preset struct {
+		Name  string `json:"name"`
+		Label string `json:"label"`
+		Count int    `json:"count"`
+	}
+	writeJSON(w, map[string]any{
+		"presets": []preset{
+			{Name: "ir", Label: "Iran", Count: parseScannerPresetCount()},
+		},
+	})
+}
+
+// parseScannerPresetLines returns the parsed non-empty, non-comment lines from the preset.
+func parseScannerPresetLines() []string {
 	var lines []string
-	for _, line := range strings.Split(src, "\n") {
+	for _, line := range strings.Split(defaultScannerPresets, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {
 			lines = append(lines, line)
 		}
 	}
-	writeJSON(w, lines)
+	return lines
+}
+
+func parseScannerPresetCount() int {
+	return len(parseScannerPresetLines())
 }
 
 func (s *Server) handleScannerStart(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +50,7 @@ func (s *Server) handleScannerStart(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Targets      []string `json:"targets"`
+		Preset       string   `json:"preset"` // e.g. "ir" — server-side preset, avoids sending 50K IPs
 		MaxIPs       int      `json:"maxIPs"`
 		RateLimit    int      `json:"rateLimit"`
 		Timeout      float64  `json:"timeout"`
@@ -43,6 +61,11 @@ func (s *Server) handleScannerStart(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
+	}
+
+	// Resolve preset into targets server-side.
+	if req.Preset == "ir" && len(req.Targets) == 0 {
+		req.Targets = parseScannerPresetLines()
 	}
 
 	if len(req.Targets) == 0 {

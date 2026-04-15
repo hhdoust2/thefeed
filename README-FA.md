@@ -116,6 +116,34 @@ sudo bash install.sh --login
 sudo bash install.sh --uninstall
 ```
 
+
+> **توجه:** سرور باید روی پورت ۵۳ پاسخ بدهد. بهتر است روی پورت غیرمحدود (`:5300`) اجرا و با iptables فوروارد کنید:
+>
+> نام اینترفیس شبکه خود را با `ip a` پیدا کنید و `eth0` را جایگزین کنید:
+> ```bash
+> sudo iptables -I INPUT -p udp --dport 5300 -j ACCEPT
+> sudo iptables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+> sudo ip6tables -I INPUT -p udp --dport 5300 -j ACCEPT
+> sudo ip6tables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+> ```
+>
+> برای ماندگار کردن این قوانین بعد از ریبوت:
+> ```bash
+> sudo apt install iptables-persistent   # Debian/Ubuntu
+> sudo netfilter-persistent save
+> ```
+
+
+**اگر مشکلی پیش آمد — حذف فوری redirect:**
+
+```bash
+# حذف قانون iptables (بازگشت به حالت اولیه)
+sudo iptables -t nat -D PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+sudo iptables -D INPUT -p udp --dport 5300 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+
 ## 🐳 نصب با Docker (سرور)
 
 اجرای سرور با Docker — بدون نیاز به نصب Go.
@@ -275,21 +303,6 @@ chmod +x thefeed-client
 | A | `ns.example.com` | `203.0.113.10` |
 | NS | `t.example.com` | `ns.example.com` |
 
-> **توجه:** سرور باید روی پورت ۵۳ پاسخ بدهد. بهتر است روی پورت غیرمحدود (`:5300`) اجرا و با iptables فوروارد کنید:
->
-> نام اینترفیس شبکه خود را با `ip a` پیدا کنید و `eth0` را جایگزین کنید:
-> ```bash
-> sudo iptables -I INPUT -p udp --dport 5300 -j ACCEPT
-> sudo iptables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
-> sudo ip6tables -I INPUT -p udp --dport 5300 -j ACCEPT
-> sudo ip6tables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
-> ```
->
-> برای ماندگار کردن این قوانین بعد از ریبوت:
-> ```bash
-> sudo apt install iptables-persistent   # Debian/Ubuntu
-> sudo netfilter-persistent save
-> ```
 
 ## 🛠️ ساخت از سورس
 
@@ -364,7 +377,7 @@ MIT
 
 <div align="center">
 
-**برای ایران آزاد 🇮🇷**
+**برای ایران آزاد** <img src="internal/web/static/iran-lion-sun.svg" alt="شیر و خورشید" height="20">
 
 *هر ایرانی حق دسترسی آزاد به اطلاعات را دارد*
 

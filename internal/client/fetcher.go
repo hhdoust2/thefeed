@@ -178,20 +178,26 @@ func (f *Fetcher) SetResolvers(resolvers []string) {
 	copy(f.activeResolvers, resolvers)
 }
 
-// UpdateResolverPool replaces the full resolver list but keeps the existing
-// active pool intact (only pruning resolvers that are no longer in the bank).
-// New bank entries are added to allResolvers but NOT automatically activated.
+// UpdateResolverPool replaces the full resolver list and removes any active
+// resolvers that are no longer in the bank.
 func (f *Fetcher) UpdateResolverPool(resolvers []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	bankSet := make(map[string]bool, len(resolvers))
 	for _, r := range resolvers {
-		bankSet[r] = true
+		k := r
+		if !strings.Contains(k, ":") {
+			k += ":53"
+		}
+		bankSet[k] = true
 	}
-	// Prune active resolvers that were removed from the bank.
 	filtered := make([]string, 0, len(f.activeResolvers))
 	for _, r := range f.activeResolvers {
-		if bankSet[r] {
+		k := r
+		if !strings.Contains(k, ":") {
+			k += ":53"
+		}
+		if bankSet[k] {
 			filtered = append(filtered, r)
 		}
 	}

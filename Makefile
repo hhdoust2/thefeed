@@ -44,7 +44,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 # Cross-compilation targets
-build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-freebsd-amd64 build-freebsd-arm64 build-windows-amd64 build-android-arm64
+build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-freebsd-amd64 build-freebsd-arm64 build-windows-amd64 build-android-arm64 build-android-arm
 
 build-linux-amd64:
 	@mkdir -p $(BUILD_DIR)
@@ -84,6 +84,10 @@ build-windows-amd64:
 build-android-arm64:
 	@mkdir -p $(BUILD_DIR)
 	GOOS=android GOARCH=arm64 go build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_CLIENT)-android-arm64 ./cmd/client
+
+build-android-arm:
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=android GOARCH=arm GOARM=7 go build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_CLIENT)-android-arm ./cmd/client
 
 # UPX compression (requires upx in PATH) — only for Linux/Windows binaries
 upx:

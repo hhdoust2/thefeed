@@ -82,6 +82,34 @@ sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/mai
 Re-login: `curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --login`
 Uninstall: `curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh | sudo bash -s -- --uninstall`
 
+
+> **Note:** The server needs to receive packets on external port 53. Running on `:53` directly requires root. It's better to listen on an unprivileged port (`:5300`) and port-forward 53 to it.
+>
+> Replace `eth0` with your actual network interface name (check with `ip a`):
+> ```bash
+> sudo iptables -I INPUT -p udp --dport 5300 -j ACCEPT
+> sudo iptables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+> sudo ip6tables -I INPUT -p udp --dport 5300 -j ACCEPT
+> sudo ip6tables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+> ```
+>
+> To make these rules persistent across reboots:
+> ```bash
+> sudo apt install iptables-persistent   # Debian/Ubuntu
+> sudo netfilter-persistent save
+> ```
+
+
+
+**If something goes wrong — remove the redirect instantly:**
+
+```bash
+# Remove the iptables rule (restores original behavior)
+sudo iptables -t nat -D PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+sudo iptables -D INPUT -p udp --dport 5300 -j ACCEPT
+sudo netfilter-persistent save
+```
+
 ## Docker Deployment (Server)
 
 Run the server with Docker — no Go toolchain needed.
@@ -434,21 +462,6 @@ This points a hostname to your server IP.
 
 This delegates all DNS queries for `t.example.com` (and its subdomains) to your server.
 
-> **Note:** The server needs to receive packets on external port 53. Running on `:53` directly requires root. It's better to listen on an unprivileged port (`:5300`) and port-forward 53 to it.
->
-> Replace `eth0` with your actual network interface name (check with `ip a`):
-> ```bash
-> sudo iptables -I INPUT -p udp --dport 5300 -j ACCEPT
-> sudo iptables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
-> sudo ip6tables -I INPUT -p udp --dport 5300 -j ACCEPT
-> sudo ip6tables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
-> ```
->
-> To make these rules persistent across reboots:
-> ```bash
-> sudo apt install iptables-persistent   # Debian/Ubuntu
-> sudo netfilter-persistent save
-> ```
 
 ## channels.txt Format
 
@@ -521,7 +534,7 @@ MIT
 
 <div align="center">
 
-**For FREE IRAN 🇮🇷**
+**For FREE IRAN** <img src="internal/web/static/iran-lion-sun.svg" alt="Lion-and-Sun" height="20">
 
 *Everyone deserves free access to information*
 

@@ -1762,10 +1762,11 @@
             <label data-i18n="scanner_targets">IPs or CIDRs (one per line)</label>
             <div style="display:flex;gap:4px">
               <button class="btn btn-flat" onclick="document.getElementById('scanTargets').value=''" data-i18n="scanner_clear_targets" style="font-size:12px;padding:4px 10px">&#128465; Clear</button>
-              <button class="btn btn-flat" onclick="loadScannerPresets()" data-i18n="scanner_load_presets" style="font-size:12px;padding:4px 10px">🇮🇷 IR</button>
+              <button class="btn btn-flat" onclick="loadScannerPresets()" style="font-size:12px;padding:4px 10px"><img class="iran-flag-icon" src="/static/iran-lion-sun.svg" alt="IR" style="height:14px;vertical-align:middle;margin-right:2px"> <span data-i18n="scanner_load_presets">Load IR Presets</span></button>
             </div>
           </div>
           <textarea id="scanTargets" rows="3" placeholder="5.1.0.0/16&#10;8.8.8.8&#10;1.1.1.1" style="width:100%;font-family:monospace;font-size:13px"></textarea>
+          <div id="scanPresetTag" style="display:none;margin-top:6px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text)"></div>
         </div>
         <div class="form-group">
           <label data-i18n="scanner_profile">Profile</label>
@@ -1939,7 +1940,8 @@
         scanner_about_short: 'بازه‌های IP را اسکن کنید تا ریزالورهای DNS سازگار با سرور شما پیدا شوند.',
         scanner_read_more: 'بیشتر بخوانید...',
         scanner_read_less: 'بستن',
-        scanner_load_presets: '\uD83C\uDDEE\uD83C\uDDF7 بارگذاری لیست ایران',
+        scanner_load_presets: 'بارگذاری لیست ایران',
+        scanner_preset_active: 'ریزالورهای ایران بارگذاری شد',
         scanner_new_scan: 'اسکن جدید',
         scanner_advanced: 'تنظیمات پیشرفته',
         scanner_copy_all: 'کپی همه',
@@ -2070,7 +2072,8 @@
         scanner_about_short: 'Scan IP ranges to find DNS resolvers that work with your server.',
         scanner_read_more: 'Read more...',
         scanner_read_less: 'Show less',
-        scanner_load_presets: '\uD83C\uDDEE\uD83C\uDDF7 Load IR Presets',
+        scanner_load_presets: 'Load IR Presets',
+        scanner_preset_active: 'Iran resolvers loaded',
         scanner_new_scan: 'New Scan',
         scanner_advanced: 'Advanced options',
         scanner_copy_all: 'Copy All',
@@ -2961,7 +2964,7 @@
         var timeStr = ts.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
         var text = msg.Text || msg.text || '';
         currentMsgTexts.push(text);
-        var mediaHtml = '', textHtml = esc(text);
+        var mediaHtml = '', textHtml = esc(text).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
         var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[POLL]', '[CONTACT]', '[LOCATION]', '[REPLY]'];
         for (var m = 0; m < mediaTypes.length; m++) {
           if (text.indexOf(mediaTypes[m]) === 0) {
@@ -3291,6 +3294,7 @@
     // ===== SCANNER =====
     var scanPollTimer = null;
     var scanLastResults = []; // cache for selection
+    var scannerActivePreset = ''; // server-side preset name (e.g. 'ir')
 
     function openScanner() {
       document.getElementById('scannerModal').classList.add('active');
@@ -3318,27 +3322,44 @@
     }
 
     async function loadScannerPresets() {
+      if (scannerActivePreset === 'ir') {
+        // Toggle off
+        scannerActivePreset = '';
+        renderPresetTag();
+        return;
+      }
       try {
         var r = await fetch('/api/scanner/presets');
         if (!r.ok) return;
-        var lines = await r.json();
-        if (lines && lines.length) {
-          var el = document.getElementById('scanTargets');
-          var existing = el.value.trim();
-          el.value = existing ? existing + '\n' + lines.join('\n') : lines.join('\n');
+        var data = await r.json();
+        var presets = data.presets || [];
+        if (presets.length > 0) {
+          scannerActivePreset = presets[0].name;
+          renderPresetTag();
         }
       } catch (e) { showToast(e.message) }
+    }
+    function renderPresetTag() {
+      var tag = document.getElementById('scanPresetTag');
+      if (scannerActivePreset) {
+        tag.style.display = '';
+        tag.innerHTML = '<img src="/static/iran-lion-sun.svg" alt="IR" style="height:14px;vertical-align:middle;margin-right:4px"> ' + t('scanner_preset_active');
+      } else {
+        tag.style.display = 'none';
+        tag.textContent = '';
+      }
     }
 
     async function startScan() {
       var targets = document.getElementById('scanTargets').value.trim().split('\n').filter(function (s) { return s.trim() });
-      if (!targets.length) { showToast(t('scanner_targets')); return }
+      if (!targets.length && !scannerActivePreset) { showToast(t('scanner_targets')); return }
       // Clear stale results from previous scan.
       scanLastResults = [];
       document.getElementById('scanResultsBody').innerHTML = '';
       document.getElementById('scannerApplySection').style.display = 'none';
       var body = {
         targets: targets,
+        preset: scannerActivePreset || undefined,
         profileId: document.getElementById('scanProfile').value,
         rateLimit: parseInt(document.getElementById('scanRateLimit').value) || 50,
         timeout: parseInt(document.getElementById('scanTimeout').value) || 15,

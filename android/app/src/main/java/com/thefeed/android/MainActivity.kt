@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -53,6 +54,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Let the app draw behind the system status bar
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Force light (white) status bar icons on dark background
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = false
+        controller.isAppearanceLightNavigationBars = false
         setContentView(R.layout.activity_main)
 
         // Apply top inset as padding so content isn't hidden behind the status bar
