@@ -11,29 +11,8 @@ class AndroidBridge(private val activity: Activity) {
         activity.getSharedPreferences(ThefeedService.PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    // ===== Identity =====
-
     @JavascriptInterface
     fun isAndroid(): Boolean = true
-
-    /** Set a preset display name for the app (shown on lock screen). */
-    @JavascriptInterface
-    fun setPresetName(name: String) {
-        prefs.edit().putString(PREF_CUSTOM_APP_NAME, name).apply()
-    }
-
-    /** Returns the preset display name, or empty string if using defaults. */
-    @JavascriptInterface
-    fun getPresetName(): String {
-        return prefs.getString(PREF_CUSTOM_APP_NAME, "") ?: ""
-    }
-
-    /** Returns the display name for the app — preset name if set, otherwise "thefeed". */
-    @JavascriptInterface
-    fun getAppDisplayName(): String {
-        val custom = prefs.getString(PREF_CUSTOM_APP_NAME, null)
-        return if (!custom.isNullOrBlank()) custom else "thefeed"
-    }
 
     // ===== Language =====
 
@@ -82,7 +61,6 @@ class AndroidBridge(private val activity: Activity) {
     }
 
     companion object {
-        const val PREF_CUSTOM_APP_NAME = "custom_app_name"
         const val PREF_PASSWORD_HASH = "password_hash"
         const val PREF_LANG = "app_lang"
     }

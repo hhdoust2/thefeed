@@ -796,64 +796,6 @@
       color: var(--text)
     }
 
-    /* Preset name grid */
-    .preset-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-      margin-top: 6px
-    }
-
-    .preset-btn {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 12px 4px 8px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--bg);
-      color: var(--text-dim);
-      font-size: 11px;
-      cursor: pointer;
-      transition: all .15s;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis
-    }
-
-    .preset-btn .preset-icon {
-      font-size: 28px;
-      line-height: 1;
-      flex-shrink: 0
-    }
-
-    .preset-btn:hover {
-      background: var(--hover)
-    }
-
-    .preset-btn.active-preset {
-      border-color: var(--accent);
-      background: rgba(51, 144, 236, .12);
-      color: var(--accent);
-      font-weight: 600
-    }
-
-    /* Experimental badge */
-    .experimental-badge {
-      display: inline-block;
-      font-size: 10px;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: rgba(241, 196, 15, .15);
-      color: #f1c40f;
-      border: 1px solid rgba(241, 196, 15, .3);
-      margin-inline-start: 8px;
-      vertical-align: middle;
-      font-weight: 600
-    }
-
     /* Password status */
     .password-status {
       display: flex;
@@ -1696,15 +1638,9 @@
           <button class="btn btn-flat btn-sm" onclick="clearBgImage()" style="color:var(--error)" data-i18n="clear_bg">Clear</button>
         </div>
       </div>
-      <!-- Android-only: App Name Preset -->
-      <div id="androidAppSection" class="settings-section" style="display:none">
-        <div class="settings-section-title"><span data-i18n="app_customization">App Customization</span><span class="experimental-badge" data-i18n="experimental">Experimental</span></div>
-        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px" data-i18n="app_preset_hint">Choose a display name for the app (shown on lock screen)</div>
-        <div class="preset-grid" id="presetNameGrid"></div>
-      </div>
       <!-- Android-only: App Password -->
       <div id="androidPasswordSection" class="settings-section" style="display:none">
-        <div class="settings-section-title"><span data-i18n="app_password">App Password</span><span class="experimental-badge" data-i18n="experimental">Experimental</span></div>
+        <div class="settings-section-title"><span data-i18n="app_password">App Password</span></div>
         <div id="passwordSetSection" style="margin-top:8px">
           <input type="password" id="appPasswordInput" placeholder=""
             data-i18n-ph="password_new_ph"
@@ -2147,9 +2083,6 @@
         dns_timeout: 'تایم‌اوت DNS (ثانیه)',
         auto_scan: 'بررسی خودکار ریزالورها (هر ساعت)',
         scanner_clear_targets: '\uD83D\uDDD1 پاک کردن',
-        app_customization: 'شخصی\u200cسازی برنامه',
-        app_preset_hint: 'نام نمایشی برنامه را انتخاب کنید (در صفحه قفل نمایش داده می‌شود)',
-        app_name_saved: 'نام برنامه ذخیره شد!',
         app_password: 'رمز عبور برنامه',
         password_new_ph: 'رمز عبور جدید',
         password_confirm_ph: 'تکرار رمز عبور',
@@ -2298,10 +2231,6 @@
         dns_timeout: 'DNS Query Timeout (s)',
         auto_scan: 'Automatic hourly resolver check',
         scanner_clear_targets: '\uD83D\uDDD1 Clear',
-        app_customization: 'App Customization',
-        experimental: 'Experimental',
-        app_preset_hint: 'Choose a display name for the app (shown on lock screen)',
-        app_name_saved: 'App name saved!',
         app_password: 'App Password',
         password_new_ph: 'New password',
         password_confirm_ph: 'Confirm password',
@@ -2536,58 +2465,16 @@
     }
 
     // ===== ANDROID SETTINGS =====
-    var _presetNames = [
-      { key: 'thefeed', en: 'thefeed', fa: 'thefeed', icon: '\uD83D\uDCE1' },
-      { key: 'weather', en: 'Weather', fa: '\u0622\u0628 \u0648 \u0647\u0648\u0627', icon: '\u2600\uFE0F' },
-      { key: 'calculator', en: 'Calculator', fa: '\u0645\u0627\u0634\u06CC\u0646\u200C\u062D\u0633\u0627\u0628', icon: '\uD83D\uDDA9' },
-      { key: 'calendar', en: 'Calendar', fa: '\u062A\u0642\u0648\u06CC\u0645', icon: '\uD83D\uDCC5' },
-      { key: 'notes', en: 'Notes', fa: '\u06CC\u0627\u062F\u062F\u0627\u0634\u062A', icon: '\uD83D\uDCDD' },
-      { key: 'clock', en: 'Clock', fa: '\u0633\u0627\u0639\u062A', icon: '\uD83D\uDD70\uFE0F' },
-      { key: 'camera', en: 'Camera', fa: '\u062F\u0648\u0631\u0628\u06CC\u0646', icon: '\uD83D\uDCF7' },
-      { key: 'compass', en: 'Compass', fa: '\u0642\u0637\u0628\u200C\u0646\u0645\u0627', icon: '\uD83E\uDDED' },
-      { key: 'gallery', en: 'Gallery', fa: '\u06AF\u0627\u0644\u0631\u06CC', icon: '\uD83D\uDDBC\uFE0F' },
-      { key: 'recorder', en: 'Recorder', fa: '\u0636\u0628\u0637 \u0635\u062F\u0627', icon: '\uD83C\uDF99\uFE0F' },
-    ];
 
     function initAndroidSettings() {
       if (typeof Android === 'undefined') return;
-      try {
-        document.getElementById('androidAppSection').style.display = '';
-        document.getElementById('androidPasswordSection').style.display = '';
-        // Build preset name grid
-        var grid = document.getElementById('presetNameGrid');
-        var current = '';
-        try { current = Android.getPresetName(); } catch (e) { }
-        grid.innerHTML = '';
-        _presetNames.forEach(function (p) {
-          var btn = document.createElement('button');
-          btn.className = 'preset-btn' + (current === p.key ? ' active-preset' : '');
-          btn.innerHTML = '<span class="preset-icon">' + p.icon + '<\/span><span>' + (currentLang === 'fa' ? p.fa : p.en) + '<\/span>';
-          btn.onclick = function () { selectPresetName(p.key); };
-          grid.appendChild(btn);
-        });
-      } catch (e) { console.error('preset grid error:', e); }
+      document.getElementById('androidPasswordSection').style.display = '';
       // Show correct password section
       try {
         var hasPw = Android.hasPassword();
         document.getElementById('passwordSetSection').style.display = hasPw ? 'none' : '';
         document.getElementById('passwordRemoveSection').style.display = hasPw ? '' : 'none';
         if (!hasPw) document.getElementById('passwordRemovePrompt').style.display = 'none';
-      } catch (e) { }
-    }
-
-    function selectPresetName(key) {
-      if (typeof Android === 'undefined') return;
-      try {
-        Android.setPresetName(key === 'thefeed' ? '' : key);
-        var btns = document.querySelectorAll('.preset-btn');
-        var idx = _presetNames.findIndex(function (p) { return p.key === key; });
-        btns.forEach(function (b, i) {
-          b.classList.toggle('active-preset', i === idx);
-        });
-        var preset = _presetNames[idx];
-        var displayName = preset ? (currentLang === 'fa' ? preset.fa : preset.en) : key;
-        showToast(t('app_name_saved') + ' — ' + displayName);
       } catch (e) { }
     }
 
