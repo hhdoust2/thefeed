@@ -1,7 +1,10 @@
 package server
 
 import (
+	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 
 	"github.com/sartoopjj/thefeed/internal/protocol"
 )
@@ -122,5 +125,155 @@ func TestParsePublicMessagesReplyPreviewUsesMainBody(t *testing.T) {
 	}
 	if msgs[0].Text != "[REPLY]\nthis is the real new post" {
 		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, "[REPLY]\nthis is the real new post")
+	}
+}
+
+func TestParsePublicMessagesReplyWithID(t *testing.T) {
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/305">
+			<a class="tgme_widget_message_date"><time datetime="2026-04-10T12:00:00+00:00"></time></a>
+			<a class="tgme_widget_message_reply" href="https://t.me/testchan/300">
+				<div class="tgme_widget_message_text">original post</div>
+			</a>
+			<div class="tgme_widget_message_text">my reply text</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, err := parsePublicMessages(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	want := "[REPLY]:300\nmy reply text"
+	if msgs[0].Text != want {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, want)
+	}
+}
+
+func TestParsePublicMessagesPoll(t *testing.T) {
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/400">
+			<a class="tgme_widget_message_date"><time datetime="2026-04-10T12:00:00+00:00"></time></a>
+			<div class="tgme_widget_message_poll">
+				<div class="tgme_widget_message_poll_question">What is your favorite color?</div>
+				<div class="tgme_widget_message_poll_option">
+					<div class="tgme_widget_message_poll_option_text">Red</div>
+				</div>
+				<div class="tgme_widget_message_poll_option">
+					<div class="tgme_widget_message_poll_option_text">Blue</div>
+				</div>
+				<div class="tgme_widget_message_poll_option">
+					<div class="tgme_widget_message_poll_option_text">Green</div>
+				</div>
+			</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, err := parsePublicMessages(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	want := "[POLL]\n📊 What is your favorite color?\n○ Red\n○ Blue\n○ Green"
+	if msgs[0].Text != want {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, want)
+	}
+}
+
+func TestExtractMessageTextPreservesLinks(t *testing.T) {
+	htmlStr := `<div class="tgme_widget_message_text">Check out <a href="https://example.com">this link</a> for details</div>`
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		t.Fatalf("html.Parse: %v", err)
+	}
+	node := findFirstByClass(doc, "tgme_widget_message_text")
+	text := extractMessageText(node)
+	want := "Check out this link (https://example.com) for details"
+	if text != want {
+		t.Fatalf("extractMessageText = %q, want %q", text, want)
+	}
+}
+
+func TestExtractMessageTextBareURL(t *testing.T) {
+	htmlStr := `<div class="tgme_widget_message_text">Visit <a href="https://example.com">https://example.com</a> now</div>`
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		t.Fatalf("html.Parse: %v", err)
+	}
+	node := findFirstByClass(doc, "tgme_widget_message_text")
+	text := extractMessageText(node)
+	want := "Visit https://example.com now"
+	if text != want {
+		t.Fatalf("extractMessageText = %q, want %q", text, want)
+	}
+}
+
+func TestExtractMessageTextRejectsJavascriptURL(t *testing.T) {
+	htmlStr := `<div class="tgme_widget_message_text"><a href="javascript:alert(1)">click me</a></div>`
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		t.Fatalf("html.Parse: %v", err)
+	}
+	node := findFirstByClass(doc, "tgme_widget_message_text")
+	text := extractMessageText(node)
+	// javascript: URLs should be stripped — only text remains
+	want := "click me"
+	if text != want {
+		t.Fatalf("extractMessageText = %q, want %q", text, want)
+	}
+}
+
+func TestExtractMessageTextRejectsDataURL(t *testing.T) {
+	htmlStr := `<div class="tgme_widget_message_text"><a href="data:text/html,<script>alert(1)</script>">link</a></div>`
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		t.Fatalf("html.Parse: %v", err)
+	}
+	node := findFirstByClass(doc, "tgme_widget_message_text")
+	text := extractMessageText(node)
+	// data: URLs should be stripped — only text remains
+	want := "link"
+	if text != want {
+		t.Fatalf("extractMessageText = %q, want %q", text, want)
+	}
+}
+
+func TestParsePublicMessagesUnsupportedMedia(t *testing.T) {
+	// Real Telegram HTML for polls/quizzes in public view: no poll widget,
+	// just a "message_media_not_supported" div.
+	body := []byte(`
+		<html><body>
+		<div class="tgme_widget_message" data-post="testchan/181">
+			<a class="tgme_widget_message_date"><time datetime="2026-05-01T10:00:00+00:00"></time></a>
+			<div class="message_media_not_supported_wrap">
+				<div class="message_media_not_supported">
+					<div class="message_media_not_supported_label">Please open Telegram to view this post</div>
+					<a href="https://t.me/testchan/181" class="message_media_view_in_telegram">VIEW IN TELEGRAM</a>
+				</div>
+			</div>
+		</div>
+		</body></html>
+	`)
+
+	msgs, err := parsePublicMessages(body)
+	if err != nil {
+		t.Fatalf("parsePublicMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+	}
+	if msgs[0].ID != 181 {
+		t.Fatalf("msgs[0].ID = %d, want 181", msgs[0].ID)
+	}
+	if msgs[0].Text != protocol.MediaPoll {
+		t.Fatalf("msgs[0].Text = %q, want %q", msgs[0].Text, protocol.MediaPoll)
 	}
 }

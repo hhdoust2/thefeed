@@ -569,6 +569,51 @@
       color: #c084fc
     }
 
+    .reply-preview {
+      background: rgba(192, 132, 252, .08);
+      border-left: 3px solid #c084fc;
+      padding: 4px 8px;
+      margin-bottom: 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text-secondary, #aaa);
+      white-space: pre-wrap;
+      max-height: 60px;
+      overflow: hidden;
+      cursor: pointer
+    }
+
+    .poll-card {
+      background: rgba(51, 144, 236, .08);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 4px
+    }
+
+    .poll-question {
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 14px
+    }
+
+    .poll-option {
+      padding: 6px 10px;
+      margin: 4px 0;
+      background: rgba(255,255,255,.06);
+      border-radius: 6px;
+      font-size: 13px
+    }
+
+    .msg a {
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all
+    }
+
+    .msg a:hover {
+      text-decoration: underline
+    }
+
     /* ===== SEND PANEL ===== */
     .send-panel {
       display: none;
@@ -1849,11 +1894,12 @@
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
             <label data-i18n="scanner_targets">IPs or CIDRs (one per line)</label>
             <div style="display:flex;gap:4px">
-              <button class="btn btn-flat" onclick="document.getElementById('scanTargets').value=''" data-i18n="scanner_clear_targets" style="font-size:12px;padding:4px 10px">&#128465; Clear</button>
+              <button class="btn btn-flat" onclick="document.getElementById('scanTargets').value='';updateScanIpCount()" data-i18n="scanner_clear_targets" style="font-size:12px;padding:4px 10px">&#128465; Clear</button>
               <button class="btn btn-flat" onclick="loadScannerPresets()" style="font-size:12px;padding:4px 10px"><img class="iran-flag-icon" src="/static/iran-lion-sun.svg" alt="IR" style="height:14px;vertical-align:middle;margin-right:2px"> <span data-i18n="scanner_load_presets">Load IR Presets</span></button>
             </div>
           </div>
-          <textarea id="scanTargets" rows="3" placeholder="5.1.0.0/16&#10;8.8.8.8&#10;1.1.1.1" style="width:100%;font-family:monospace;font-size:13px"></textarea>
+          <textarea id="scanTargets" rows="3" placeholder="5.1.0.0/16&#10;8.8.8.8&#10;1.1.1.1" style="width:100%;font-family:monospace;font-size:13px" oninput="updateScanIpCount()"></textarea>
+          <div id="scanIpCount" style="margin-top:4px;font-size:12px;color:var(--text-dim);display:none"></div>
           <div id="scanPresetTag" style="display:none;margin-top:6px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text)"></div>
         </div>
         <div class="form-group">
@@ -2030,6 +2076,8 @@
         scanner_read_less: 'بستن',
         scanner_load_presets: 'بارگذاری لیست ایران',
         scanner_preset_active: 'ریزالورهای ایران بارگذاری شد',
+        scanner_from_input: 'از ورودی',
+        scanner_from_preset: 'از پیش‌فرض',
         scanner_new_scan: 'اسکن جدید',
         scanner_advanced: 'تنظیمات پیشرفته',
         scanner_copy_all: 'کپی همه',
@@ -2099,6 +2147,7 @@
         password_mismatch: 'رمزها مطابقت ندارند',
         password_wrong: 'رمز عبور اشتباه است',
         password_empty: 'رمز عبور نمی\u200cتواند خالی باشد',
+        poll_placeholder: 'نظرسنجی (برای مشاهده تلگرام را باز کنید)',
       },
       en: {
         search: 'Search...', settings: 'Settings', profiles: 'Profiles',
@@ -2178,6 +2227,8 @@
         scanner_read_less: 'Show less',
         scanner_load_presets: 'Load IR Presets',
         scanner_preset_active: 'Iran resolvers loaded',
+        scanner_from_input: 'from input',
+        scanner_from_preset: 'from preset',
         scanner_new_scan: 'New Scan',
         scanner_advanced: 'Advanced options',
         scanner_copy_all: 'Copy All',
@@ -2247,6 +2298,7 @@
         password_mismatch: 'Passwords do not match',
         password_wrong: 'Wrong password',
         password_empty: 'Password cannot be empty',
+        poll_placeholder: 'Poll (open Telegram to view)',
       }
     };
     var lang = localStorage.getItem('thefeed_lang') || 'fa';
@@ -2746,7 +2798,7 @@
           var h = '<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--text-dim)">' + t('select_resolvers_export') + '</label></div>';
           h += '<div style="display:flex;gap:4px;margin-bottom:4px"><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',true)">' + t('select_all') + '</button><button class="btn btn-flat" style="font-size:10px;padding:2px 6px" onclick="toggleAllShareResolvers(\'' + id + '\',false)">' + t('select_none') + '</button></div>';
           for (var i = 0; i < bank.length; i++) {
-            h += '<label style="display:block;font-size:11px;font-family:monospace;cursor:pointer"><input type="checkbox" class="share-r-cb" data-profile="' + id + '" value="' + esc(bank[i].addr) + '" checked onchange="updateShareUri(\'' + id + '\')" style="width:auto;margin-inline-end:4px">' + esc(bank[i].addr) + '</label>';
+            h += '<label style="display:block;font-size:11px;font-family:monospace;cursor:pointer"><input type="checkbox" class="share-r-cb" data-profile="' + id + '" value="' + escAttr(bank[i].addr) + '" checked onchange="updateShareUri(\'' + id + '\')" style="width:auto;margin-inline-end:4px">' + esc(bank[i].addr) + '</label>';
           }
           resolverEl.innerHTML = h;
         }
@@ -2905,7 +2957,7 @@
         var h = '';
         for (var i = 0; i < chans.length; i++) {
           h += '<div class="channel-list-item"><span>' + esc(chans[i]) + '</span>';
-          h += '<button class="btn btn-flat btn-sm" style="color:var(--error)" data-ch="' + esc(chans[i]) + '" onclick="removeChannelEditor(this.dataset.ch)">' + t('remove') + '</button></div>';
+          h += '<button class="btn btn-flat btn-sm" style="color:var(--error)" data-ch="' + escAttr(chans[i]) + '" onclick="removeChannelEditor(this.dataset.ch)">' + t('remove') + '</button></div>';
         }
         el.innerHTML = h;
       } catch (e) { el.innerHTML = '<div style="color:var(--error);font-size:12px">' + esc(e.message) + '</div>' }
@@ -3066,7 +3118,7 @@
           var lastID = e.ch.LastMsgID || e.ch.lastMsgID || 0;
           var chNm2 = e.ch.Name || e.ch.name || '';
           var badge = (previousMsgIDs[chNm2] > 0 && lastID > previousMsgIDs[chNm2] && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
-          h += '<div class="ch-item' + active + '" data-name="' + esc(name) + '" onclick="selectChannel(' + num2 + ')">';
+          h += '<div class="ch-item' + active + '" data-name="' + escAttr(name) + '" onclick="selectChannel(' + num2 + ')">';
           h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
           h += '<div class="ch-info"><div class="ch-name">' + esc(name) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           h += '<div class="ch-preview">' + badge + '</div></div></div>';
@@ -3139,6 +3191,28 @@
       } catch (e) { }
     }
 
+    function renderPollCard(pollBody) {
+      var lines = pollBody.split('\n');
+      var html = '<div class="poll-card">';
+      var hasContent = false;
+      for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i];
+        if (ln.indexOf('📊 ') === 0) {
+          html += '<div class="poll-question">' + esc(ln.substring(2).trim()) + '</div>';
+          hasContent = true;
+        } else if (ln.indexOf('○ ') === 0) {
+          html += '<div class="poll-option">' + esc(ln) + '</div>';
+          hasContent = true;
+        } else if (ln.trim()) {
+          html += '<div>' + linkify(esc(ln)) + '</div>';
+          hasContent = true;
+        }
+      }
+      if (!hasContent) html += '<div class="poll-question" style="opacity:.5">' + t('poll_placeholder') + '</div>';
+      html += '</div>';
+      return html;
+    }
+
     function renderMessages(msgs, gaps) {
       var el = document.getElementById('messages');
       if (!msgs || !msgs.length) { el.innerHTML = '<div class="empty-state"><p>' + t('no_messages') + '</p><p style="font-size:12px;opacity:.6;margin-top:6px">' + t('no_messages_hint') + '</p></div>'; return }
@@ -3150,6 +3224,9 @@
       // Build a lookup: message ID → gap count to insert BEFORE that message.
       var gapBefore = {};
       if (gaps) { for (var g = 0; g < gaps.length; g++) { gapBefore[gaps[g].before_id] = gaps[g].count } }
+      // Build a lookup: message ID → message object (for reply previews).
+      var msgByID = {};
+      for (var mi = 0; mi < msgs.length; mi++) { var mid = msgs[mi].ID || msgs[mi].id; if (mid) msgByID[mid] = msgs[mi] }
       currentMsgTexts = [];
       var dateLocale = lang === 'fa' ? 'fa-IR' : 'en-US';
       var dateOpts = lang === 'fa' ? { year: 'numeric', month: 'long', day: 'numeric', calendar: 'persian' } : { year: 'numeric', month: 'long', day: 'numeric' };
@@ -3178,13 +3255,40 @@
         var timeStr = ts.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
         var text = msg.Text || msg.text || '';
         currentMsgTexts.push(text);
-        var mediaHtml = '', textHtml = esc(text).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
-        var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[POLL]', '[CONTACT]', '[LOCATION]', '[REPLY]'];
-        for (var m = 0; m < mediaTypes.length; m++) {
-          if (text.indexOf(mediaTypes[m]) === 0) {
-            var tagCls = mediaTypes[m] === '[REPLY]' ? 'media-tag reply-tag' : 'media-tag';
-            mediaHtml = '<div class="' + tagCls + '">' + mediaTypes[m] + '</div>';
-            textHtml = esc(text.substring(mediaTypes[m].length).replace(/^\n/, '')); break
+        var mediaHtml = '', textHtml = linkify(esc(text)).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+        // Check for [REPLY]:ID or [REPLY] format (backward compat: also [REPLY:ID])
+        var replyMatch = text.match(/^\[REPLY\](?::(\d+))?/) || text.match(/^\[REPLY:(\d+)\]/);
+        if (replyMatch) {
+          var replyTag = replyMatch[0];
+          var replyId = replyMatch[1] ? parseInt(replyMatch[1]) : 0;
+          mediaHtml = '<div class="media-tag reply-tag">[REPLY]</div>';
+          var replyBody = text.substring(replyTag.length).replace(/^\n/, '');
+          // If reply body contains a poll, render it as a styled poll card
+          if (replyBody.indexOf('[POLL]') === 0) {
+            var rpPollBody = replyBody.substring('[POLL]'.length).replace(/^\n/, '');
+            textHtml = renderPollCard(rpPollBody);
+            mediaHtml += '<div class="media-tag">[POLL]</div>';
+          } else {
+            textHtml = linkify(esc(replyBody)).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">');
+          }
+          if (replyId > 0 && msgByID[replyId]) {
+            var rpText = (msgByID[replyId].Text || msgByID[replyId].text || '').replace(/^\[(?:IMAGE|VIDEO|FILE|AUDIO|STICKER|GIF|POLL|CONTACT|LOCATION|REPLY)[^\]]*\](?::\d+)?\n?/, '');
+            if (rpText.length > 120) rpText = rpText.substring(0, 120) + '…';
+            mediaHtml += '<div class="reply-preview" onclick="scrollToMsg(' + replyId + ')" title="#' + replyId + '">' + esc(rpText) + '</div>';
+          }
+        } else if (text.indexOf('[POLL]') === 0) {
+          // Render poll with styled card
+          mediaHtml = '<div class="media-tag">[POLL]</div>';
+          var pollBody = text.substring('[POLL]'.length).replace(/^\n/, '');
+          textHtml = renderPollCard(pollBody);
+        } else {
+          // Other media types
+          var mediaTypes = ['[IMAGE]', '[VIDEO]', '[FILE]', '[AUDIO]', '[STICKER]', '[GIF]', '[CONTACT]', '[LOCATION]'];
+          for (var m = 0; m < mediaTypes.length; m++) {
+            if (text.indexOf(mediaTypes[m]) === 0) {
+              mediaHtml = '<div class="media-tag">' + mediaTypes[m] + '</div>';
+              textHtml = linkify(esc(text.substring(mediaTypes[m].length).replace(/^\n/, ''))).replace(/\uD83C\uDDEE\uD83C\uDDF7/g, '<img src="/static/iran-lion-sun.svg" alt="\u{1F981}\u2600\uFE0F" style="height:1.1em;vertical-align:middle">'); break
+            }
           }
         }
         html += '<div class="msg' + (isPersian(text) ? ' rtl-msg' : '') + '" dir="auto">' + mediaHtml + textHtml + '<div class="msg-meta"><button class="msg-copy-btn" onclick="copyMsg(' + i + ')">' + t('copy') + '</button><span>#' + id + '</span><span>' + timeStr + '</span></div></div>';
@@ -3503,12 +3607,74 @@
 
     // ===== UTILITIES =====
     function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML }
+    function escAttr(s) { return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;') }
+    function linkify(s) {
+      return s.replace(/(https?:\/\/[^\s<>&"']+)/g, function(url) {
+        var trail = '';
+        // Strip trailing punctuation that's not part of the URL
+        while (url.length > 1) {
+          var ch = url[url.length - 1];
+          if (ch === ')' && url.split('(').length <= url.split(')').length - 1) {
+            trail = ch + trail; url = url.slice(0, -1);
+          } else if (/[.,;:!?>\u200C\u200F]/.test(ch)) {
+            trail = ch + trail; url = url.slice(0, -1);
+          } else { break }
+        }
+        return '<a href="' + escAttr(url) + '" target="_blank" rel="noopener" dir="ltr">' + url + '</a>' + trail;
+      });
+    }
+    function scrollToMsg(id) {
+      var els = document.querySelectorAll('.msg');
+      for (var i = 0; i < els.length; i++) {
+        var meta = els[i].querySelector('.msg-meta');
+        if (meta && meta.textContent.indexOf('#' + id) !== -1) {
+          els[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          els[i].style.outline = '2px solid var(--accent)';
+          setTimeout(function(el) { el.style.outline = '' }, 1500, els[i]);
+          return;
+        }
+      }
+    }
     function isPersian(text) { return text && (text.match(/[\u0600-\u06FF]/g) || []).length > text.length * 0.25 }
 
     // ===== SCANNER =====
     var scanPollTimer = null;
     var scanLastResults = []; // cache for selection
     var scannerActivePreset = ''; // server-side preset name (e.g. 'ir')
+    var scannerPresetIpCount = 0; // IP count from preset
+
+    function countCIDRIPs(text) {
+      var lines = text.split('\n');
+      var total = 0;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line || line[0] === '#') continue;
+        var slash = line.indexOf('/');
+        if (slash !== -1) {
+          var prefix = parseInt(line.substring(slash + 1));
+          if (prefix >= 0 && prefix <= 32) total += (1 << (32 - prefix)) >>> 0;
+        } else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(line)) {
+          total += 1;
+        }
+      }
+      return total;
+    }
+    function updateScanIpCount() {
+      var el = document.getElementById('scanIpCount');
+      var text = document.getElementById('scanTargets').value;
+      var count = countCIDRIPs(text);
+      var presetCount = scannerActivePreset ? scannerPresetIpCount : 0;
+      var totalCount = count + presetCount;
+      if (totalCount > 0) {
+        var parts = [];
+        if (count > 0) parts.push(count.toLocaleString() + ' ' + t('scanner_from_input'));
+        if (presetCount > 0) parts.push(presetCount.toLocaleString() + ' ' + t('scanner_from_preset'));
+        el.textContent = '≈ ' + totalCount.toLocaleString() + ' IPs' + (parts.length > 1 ? ' (' + parts.join(' + ') + ')' : '');
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    }
 
     function openScanner() {
       document.getElementById('scannerModal').classList.add('active');
@@ -3539,7 +3705,9 @@
       if (scannerActivePreset === 'ir') {
         // Toggle off
         scannerActivePreset = '';
+        scannerPresetIpCount = 0;
         renderPresetTag();
+        updateScanIpCount();
         return;
       }
       try {
@@ -3549,7 +3717,9 @@
         var presets = data.presets || [];
         if (presets.length > 0) {
           scannerActivePreset = presets[0].name;
+          scannerPresetIpCount = presets[0].count || 0;
           renderPresetTag();
+          updateScanIpCount();
         }
       } catch (e) { showToast(e.message) }
     }
@@ -3700,10 +3870,10 @@
         var r = results[i];
         var tr = document.createElement('tr');
         tr.style.borderTop = '1px solid var(--border)';
-        tr.innerHTML = '<td style="padding:8px"><input type="checkbox" class="scan-select-cb" data-ip="' + esc(r.ip) + '" checked onchange="updateScanSelectedCount()"></td>' +
+        tr.innerHTML = '<td style="padding:8px"><input type="checkbox" class="scan-select-cb" data-ip="' + escAttr(r.ip) + '" checked onchange="updateScanSelectedCount()"></td>' +
                         '<td style="padding:8px;font-family:monospace;font-size:13px">' + esc(r.ip) + '</td>' +
                         '<td style="padding:8px;text-align:right;font-size:13px;color:var(--text-dim)">' + (r.latencyMs != null ? Math.round(r.latencyMs) + 'ms' : '-') + '</td>' +
-                        '<td style="padding:4px 8px"><button class="btn btn-flat" style="font-size:12px;padding:4px 8px;min-width:0" onclick="navigator.clipboard.writeText(\'' + esc(r.ip) + '\');showToast(t(\'copied\'))">&#9776;</button></td>';
+                        '<td style="padding:4px 8px"><button class="btn btn-flat" style="font-size:12px;padding:4px 8px;min-width:0" onclick="navigator.clipboard.writeText(\'' + escAttr(r.ip) + '\');showToast(t(\'copied\'))">&#9776;</button></td>';
         body.appendChild(tr);
       }
 

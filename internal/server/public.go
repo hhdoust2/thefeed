@@ -230,6 +230,15 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			mediaPrefix = protocol.MediaAudio
 		case findFirstByClass(n, "tgme_widget_message_poll") != nil:
 			mediaPrefix = protocol.MediaPoll
+			pollBody := extractPollData(n)
+			if pollBody != "" {
+				if text != "" {
+					text = mediaPrefix + "\n" + pollBody + "\n" + text
+				} else {
+					text = mediaPrefix + "\n" + pollBody
+				}
+				mediaPrefix = "" // already handled
+			}
 		case findFirstByClass(n, "tgme_widget_message_location_wrap") != nil ||
 			findFirstByClass(n, "tgme_widget_message_venue_wrap") != nil:
 			mediaPrefix = protocol.MediaLocation
@@ -237,6 +246,11 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			mediaPrefix = protocol.MediaContact
 		case findFirstByClass(n, "tgme_widget_message_document_wrap") != nil:
 			mediaPrefix = protocol.MediaFile
+		case findFirstByClass(n, "message_media_not_supported") != nil:
+			// Telegram shows "Please open Telegram to view this post" for
+			// unsupported content like polls, quizzes, etc. Tag it so
+			// the message is not silently dropped.
+			mediaPrefix = protocol.MediaPoll
 		}
 		if mediaPrefix != "" {
 			if text != "" {
@@ -249,8 +263,13 @@ func parsePublicMessages(body []byte) ([]protocol.Message, error) {
 			return
 		}
 		// Detect replies by checking for the reply preview element.
-		if findFirstByClass(n, "tgme_widget_message_reply") != nil {
-			text = protocol.MediaReply + "\n" + text
+		if replyNode := findFirstByClass(n, "tgme_widget_message_reply"); replyNode != nil {
+			replyID := extractReplyID(replyNode)
+			if replyID > 0 {
+				text = fmt.Sprintf("%s:%d\n%s", protocol.MediaReply, replyID, text)
+			} else {
+				text = protocol.MediaReply + "\n" + text
+			}
 		}
 		collected = append(collected, publicMessage{
 			id:        id,
@@ -421,6 +440,34 @@ func extractMessageText(n *html.Node) string {
 				b.WriteByte('\n')
 			}
 		}
+		// Preserve hyperlinks: if <a href="URL"> and the link text differs from the URL, append it.
+		if cur.Type == html.ElementNode && cur.Data == "a" {
+			href := attrValue(cur, "href")
+			// Only preserve safe http(s) URLs; reject javascript: and other schemes.
+			if href != "" && !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
+				href = ""
+			}
+			linkText := extractInnerText(cur)
+			if href != "" && linkText != "" && linkText != href {
+				if b.Len() > 0 {
+					last := b.String()[b.Len()-1]
+					if last != '\n' && last != ' ' {
+						b.WriteByte(' ')
+					}
+				}
+				b.WriteString(linkText + " (" + href + ")")
+				return // skip walking children, already consumed
+			} else if href != "" && (linkText == "" || linkText == href) {
+				if b.Len() > 0 {
+					last := b.String()[b.Len()-1]
+					if last != '\n' && last != ' ' {
+						b.WriteByte(' ')
+					}
+				}
+				b.WriteString(href)
+				return // skip walking children
+			}
+		}
 		for child := cur.FirstChild; child != nil; child = child.NextSibling {
 			walk(child)
 		}
@@ -436,4 +483,76 @@ func trimTrailingSpace(b *strings.Builder) {
 	}
 	b.Reset()
 	b.WriteString(s)
+}
+
+// extractInnerText returns the concatenated text content of a node and its children.
+func extractInnerText(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(cur *html.Node) {
+		if cur.Type == html.TextNode {
+			b.WriteString(cur.Data)
+		}
+		for child := cur.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(n)
+	return strings.TrimSpace(b.String())
+}
+
+// extractPollData extracts poll question and options from the public HTML widget.
+// Telegram's poll HTML uses these classes:
+//   - tgme_widget_message_poll_question → question text
+//   - tgme_widget_message_poll_option_text → each option's text
+func extractPollData(n *html.Node) string {
+	question := ""
+	if qNode := findFirstByClass(n, "tgme_widget_message_poll_question"); qNode != nil {
+		question = strings.TrimSpace(extractMessageText(qNode))
+	}
+	var options []string
+	visitNodes(n, func(cur *html.Node) {
+		if hasClass(cur, "tgme_widget_message_poll_option_text") {
+			opt := strings.TrimSpace(extractMessageText(cur))
+			if opt != "" {
+				options = append(options, "○ "+opt)
+			}
+		}
+	})
+	if question == "" && len(options) == 0 {
+		return ""
+	}
+	result := "📊 " + question
+	if len(options) > 0 {
+		result += "\n" + strings.Join(options, "\n")
+	}
+	return result
+}
+
+// extractReplyID parses the href of the reply element to get the replied-to message ID.
+// The href typically looks like "https://t.me/channel/123" or "?single&reply=123".
+func extractReplyID(replyNode *html.Node) uint32 {
+	href := ""
+	// The reply element itself may be an <a> or contain one.
+	if replyNode.Type == html.ElementNode && replyNode.Data == "a" {
+		href = attrValue(replyNode, "href")
+	}
+	if href == "" {
+		linkNode := findFirstElement(replyNode, "a")
+		if linkNode != nil {
+			href = attrValue(linkNode, "href")
+		}
+	}
+	if href == "" {
+		return 0
+	}
+	// Parse the last path segment as the message ID.
+	id, err := parsePostID(href)
+	if err != nil {
+		return 0
+	}
+	return id
 }

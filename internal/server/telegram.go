@@ -398,9 +398,17 @@ func (tr *TelegramReader) extractMessages(hist tg.MessagesMessagesClass, chatTyp
 			}
 		}
 
-		// Mark messages that are replies.
-		if _, hasReply := msg.GetReplyTo(); hasReply {
-			text = protocol.MediaReply + "\n" + text
+		// Mark messages that are replies (include reply-to message ID).
+		if replyTo, hasReply := msg.GetReplyTo(); hasReply {
+			if rh, ok := replyTo.(*tg.MessageReplyHeader); ok {
+				if rid, hasID := rh.GetReplyToMsgID(); hasID {
+					text = fmt.Sprintf("%s:%d\n%s", protocol.MediaReply, rid, text)
+				} else {
+					text = protocol.MediaReply + "\n" + text
+				}
+			} else {
+				text = protocol.MediaReply + "\n" + text
+			}
 		}
 
 		msgs = append(msgs, protocol.Message{
@@ -429,6 +437,20 @@ func (tr *TelegramReader) extractText(msg *tg.Message) string {
 			mediaPrefix = protocol.MediaContact
 		case *tg.MessageMediaPoll:
 			mediaPrefix = protocol.MediaPoll
+			pollMedia := msg.Media.(*tg.MessageMediaPoll)
+			question := pollMedia.Poll.Question.Text
+			var opts []string
+			for _, a := range pollMedia.Poll.Answers {
+				opts = append(opts, "○ "+a.Text.Text)
+			}
+			pollBody := "📊 " + question
+			if len(opts) > 0 {
+				pollBody += "\n" + strings.Join(opts, "\n")
+			}
+			if text != "" {
+				return mediaPrefix + "\n" + pollBody + "\n" + text
+			}
+			return mediaPrefix + "\n" + pollBody
 		}
 	}
 
