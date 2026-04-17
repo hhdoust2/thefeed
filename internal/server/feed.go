@@ -210,3 +210,20 @@ func (f *Feed) SetChannels(channels []string) {
 	f.channels = channels
 	f.rebuildMetaBlocks()
 }
+
+// SetChannelDisplayName updates the display name for a specific channel number (1-indexed).
+// This allows replacing the raw handle (e.g. "networkti") with the channel's
+// actual title (e.g. "Sarto") after it has been fetched.
+func (f *Feed) SetChannelDisplayName(channelNum int, displayName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	idx := channelNum - 1
+	if idx < 0 || idx >= len(f.channels) {
+		return
+	}
+	if displayName == "" || f.channels[idx] == displayName {
+		return
+	}
+	f.channels[idx] = displayName
+	f.rebuildMetaBlocks()
+}
