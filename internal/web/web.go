@@ -999,8 +999,16 @@ func (s *Server) refreshMetadataOnly() {
 		return
 	}
 
+	titles, _ := fetcher.FetchTitles(ctx)
+	channels := meta.Channels
+	for i := range channels {
+		if t, ok := titles[channels[i].Name]; ok && t != "" {
+			channels[i].DisplayName = t
+		}
+	}
+
 	s.mu.Lock()
-	s.channels = meta.Channels
+	s.channels = channels
 	s.telegramLoggedIn = meta.TelegramLoggedIn
 	s.nextFetch = meta.NextFetch
 	s.metaFetchedAt = time.Now()
@@ -1088,8 +1096,16 @@ func (s *Server) refreshChannel(channelNum int) {
 			}
 			return
 		}
+		titles, _ := fetcher.FetchTitles(ctx)
+		channels := meta.Channels
+		for i := range channels {
+			if t, ok := titles[channels[i].Name]; ok && t != "" {
+				channels[i].DisplayName = t
+			}
+		}
+		meta.Channels = channels
 		s.mu.Lock()
-		s.channels = meta.Channels
+		s.channels = channels
 		s.telegramLoggedIn = meta.TelegramLoggedIn
 		s.nextFetch = meta.NextFetch
 		s.metaFetchedAt = time.Now()

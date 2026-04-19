@@ -22,6 +22,7 @@ type Feed struct {
 	canSend          map[int]bool
 	metaBlocks       [][]byte // metadata for all channels
 	versionBlocks    [][]byte // channel for latest server-known release version
+	titlesBlocks     [][]byte // channel for per-channel display names
 	updated          time.Time
 	telegramLoggedIn bool
 	nextFetch        uint32
@@ -42,6 +43,7 @@ func NewFeed(channels []string) *Feed {
 	f.rotateMarker()
 	f.rebuildMetaBlocks()
 	f.rebuildVersionBlocks()
+	f.rebuildTitlesBlocks()
 	return f
 }
 
@@ -82,6 +84,9 @@ func (f *Feed) GetBlock(channel, block int) ([]byte, error) {
 	}
 	if channel == int(protocol.VersionChannel) {
 		return f.getVersionBlock(block)
+	}
+	if channel == int(protocol.TitlesChannel) {
+		return f.getTitlesBlock(block)
 	}
 
 	ch, ok := f.blocks[channel]
@@ -137,7 +142,6 @@ func (f *Feed) rebuildMetaBlocks() {
 		}
 		meta.Channels = append(meta.Channels, protocol.ChannelInfo{
 			Name:        name,
-			DisplayName: f.displayNames[chNum],
 			Blocks:      blockCount,
 			LastMsgID:   f.lastIDs[chNum],
 			ContentHash: f.contentHashes[chNum],
@@ -147,6 +151,31 @@ func (f *Feed) rebuildMetaBlocks() {
 	}
 
 	f.metaBlocks = protocol.SplitIntoBlocks(protocol.SerializeMetadata(&meta))
+}
+
+func (f *Feed) getTitlesBlock(block int) ([]byte, error) {
+	blocks := f.titlesBlocks
+	if len(blocks) == 0 {
+		f.rebuildTitlesBlocks()
+		blocks = f.titlesBlocks
+	}
+	if block < 0 || block >= len(blocks) {
+		return nil, fmt.Errorf("titles block %d out of range (%d blocks)", block, len(blocks))
+	}
+	return blocks[block], nil
+}
+
+// rebuildTitlesBlocks re-serializes the display name map and splits it into blocks.
+// Must be called with f.mu held.
+func (f *Feed) rebuildTitlesBlocks() {
+	titles := make(map[string]string, len(f.channels))
+	for i, name := range f.channels {
+		chNum := i + 1
+		if dn := f.displayNames[chNum]; dn != "" {
+			titles[name] = dn
+		}
+	}
+	f.titlesBlocks = protocol.SplitIntoBlocks(protocol.EncodeTitlesData(titles))
 }
 
 func (f *Feed) rebuildVersionBlocks() {
@@ -229,5 +258,5 @@ func (f *Feed) SetChannelDisplayName(channelNum int, displayName string) {
 		return
 	}
 	f.displayNames[channelNum] = displayName
-	f.rebuildMetaBlocks()
+	f.rebuildTitlesBlocks()
 }

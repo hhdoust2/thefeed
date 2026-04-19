@@ -682,6 +682,44 @@ func (f *Fetcher) FetchLatestVersion(ctx context.Context) (string, error) {
 	return protocol.DecodeVersionData(data)
 }
 
+// FetchTitles fetches and decodes the channel display name map from TitlesChannel.
+// Returns an empty map (not an error) when the server does not yet have any display names
+// or when the server is an older version that does not support TitlesChannel.
+// Uses a short deadline so that old servers (which return NXDOMAIN immediately) do not
+// cause the 20-retry backoff in FetchBlock to stall the caller for ~95 seconds.
+func (f *Fetcher) FetchTitles(ctx context.Context) (map[string]string, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	data, err := f.FetchBlock(fetchCtx, protocol.TitlesChannel, 0)
+	if err != nil {
+		return map[string]string{}, nil
+	}
+
+	titles, parseErr := protocol.DecodeTitlesData(data)
+	if parseErr == nil {
+		return titles, nil
+	}
+
+	// Titles may span multiple blocks — concatenate and retry.
+	allData := make([]byte, len(data))
+	copy(allData, data)
+	for blk := uint16(1); blk < 10; blk++ {
+		if fetchCtx.Err() != nil {
+			return map[string]string{}, nil
+		}
+		block, fetchErr := f.FetchBlock(fetchCtx, protocol.TitlesChannel, blk)
+		if fetchErr != nil {
+			break
+		}
+		allData = append(allData, block...)
+		if titles, parseErr = protocol.DecodeTitlesData(allData); parseErr == nil {
+			return titles, nil
+		}
+	}
+	return map[string]string{}, nil
+}
+
 // ErrContentHashMismatch is returned when the fetched messages do not match
 // the expected content hash from metadata.  This typically means the server
 // regenerated its blocks between the metadata fetch and the block fetch
