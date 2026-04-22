@@ -166,6 +166,8 @@ func (f *Feed) getTitlesBlock(block int) ([]byte, error) {
 }
 
 // rebuildTitlesBlocks re-serializes the display name map and splits it into blocks.
+// Block 0 is prefixed with a uint16 total-block count so the client can fetch all
+// remaining blocks in parallel after reading the first one.
 // Must be called with f.mu held.
 func (f *Feed) rebuildTitlesBlocks() {
 	titles := make(map[string]string, len(f.channels))
@@ -175,7 +177,12 @@ func (f *Feed) rebuildTitlesBlocks() {
 			titles[name] = dn
 		}
 	}
-	f.titlesBlocks = protocol.SplitIntoBlocks(protocol.EncodeTitlesData(titles))
+	blocks := protocol.SplitIntoBlocks(protocol.EncodeTitlesData(titles))
+	if len(blocks) > 0 {
+		prefix := []byte{byte(len(blocks) >> 8), byte(len(blocks))}
+		blocks[0] = append(prefix, blocks[0]...)
+	}
+	f.titlesBlocks = blocks
 }
 
 func (f *Feed) rebuildVersionBlocks() {

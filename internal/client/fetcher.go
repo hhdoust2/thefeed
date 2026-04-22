@@ -683,41 +683,60 @@ func (f *Fetcher) FetchLatestVersion(ctx context.Context) (string, error) {
 }
 
 // FetchTitles fetches and decodes the channel display name map from TitlesChannel.
-// Returns an empty map (not an error) when the server does not yet have any display names
-// or when the server is an older version that does not support TitlesChannel.
-// Uses a short deadline so that old servers (which return NXDOMAIN immediately) do not
-// cause the 20-retry backoff in FetchBlock to stall the caller for ~95 seconds.
+// Returns an empty map (not an error) when the server does not support TitlesChannel.
+// Block 0 carries a uint16 total-block count prefix; remaining blocks are fetched in
+// parallel so the overall fetch is bounded by the slowest single block, not the sum.
 func (f *Fetcher) FetchTitles(ctx context.Context) (map[string]string, error) {
-	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	fetchCtx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	data, err := f.FetchBlock(fetchCtx, protocol.TitlesChannel, 0)
-	if err != nil {
+	block0, err := f.FetchBlock(fetchCtx, protocol.TitlesChannel, 0)
+	if err != nil || len(block0) < 2 {
 		return map[string]string{}, nil
 	}
 
-	titles, parseErr := protocol.DecodeTitlesData(data)
-	if parseErr == nil {
+	totalBlocks := int(binary.BigEndian.Uint16(block0))
+	payload0 := block0[2:]
+
+	if totalBlocks <= 1 {
+		titles, _ := protocol.DecodeTitlesData(payload0)
+		if titles == nil {
+			titles = map[string]string{}
+		}
 		return titles, nil
 	}
 
-	// Titles may span multiple blocks — concatenate and retry.
-	allData := make([]byte, len(data))
-	copy(allData, data)
-	for blk := uint16(1); blk < 10; blk++ {
-		if fetchCtx.Err() != nil {
+	// Fetch remaining blocks in parallel.
+	type blockResult struct {
+		data []byte
+		err  error
+	}
+	results := make([]blockResult, totalBlocks)
+	results[0] = blockResult{data: payload0}
+
+	var wg sync.WaitGroup
+	for blk := 1; blk < totalBlocks; blk++ {
+		wg.Add(1)
+		go func(blk int) {
+			defer wg.Done()
+			data, fetchErr := f.FetchBlock(fetchCtx, protocol.TitlesChannel, uint16(blk))
+			results[blk] = blockResult{data: data, err: fetchErr}
+		}(blk)
+	}
+	wg.Wait()
+
+	var allData []byte
+	for _, r := range results {
+		if r.err != nil {
 			return map[string]string{}, nil
 		}
-		block, fetchErr := f.FetchBlock(fetchCtx, protocol.TitlesChannel, blk)
-		if fetchErr != nil {
-			break
-		}
-		allData = append(allData, block...)
-		if titles, parseErr = protocol.DecodeTitlesData(allData); parseErr == nil {
-			return titles, nil
-		}
+		allData = append(allData, r.data...)
 	}
-	return map[string]string{}, nil
+	titles, _ := protocol.DecodeTitlesData(allData)
+	if titles == nil {
+		titles = map[string]string{}
+	}
+	return titles, nil
 }
 
 // ErrContentHashMismatch is returned when the fetched messages do not match
