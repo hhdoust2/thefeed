@@ -108,10 +108,14 @@ func (c *Cache) MergeAndPut(channelName string, fresh []protocol.Message) (*Mess
 
 	// Load existing history without TTL check — we want to keep old messages.
 	var existing []protocol.Message
+	existingDisplayName := ""
 	if data, err := os.ReadFile(c.channelPath(channelName)); err == nil {
 		var cc cachedChannel
 		if json.Unmarshal(data, &cc) == nil {
 			existing = cc.Messages
+			if cc.DisplayName != "" {
+				existingDisplayName = cc.DisplayName
+			}
 		}
 	}
 
@@ -134,7 +138,7 @@ func (c *Cache) MergeAndPut(channelName string, fresh []protocol.Message) (*Mess
 		merged = merged[len(merged)-maxCachedMessages:]
 	}
 
-	cc := cachedChannel{Messages: merged, FetchedAt: time.Now().Unix()}
+	cc := cachedChannel{Messages: merged, FetchedAt: time.Now().Unix(), Name: channelName, DisplayName: existingDisplayName}
 	data, err := json.Marshal(cc)
 	if err != nil {
 		return nil, err
