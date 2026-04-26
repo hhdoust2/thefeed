@@ -87,7 +87,7 @@ jobs:
           if [ "${{ matrix.android_arm }}" = "true" ]; then
             out="build/thefeed-client-android-arm"
           else
-            out="build/thefeed-client-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
+            out="build/thefeed-client-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
           fi
           go build -trimpath -ldflags="${LDFLAGS}" -o "$out" ./cmd/client
 
