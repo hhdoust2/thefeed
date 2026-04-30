@@ -225,7 +225,7 @@ func fetchGitHubRaw(ctx context.Context, hc *http.Client, url string, expectedSi
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "thefeed-client")
+	req.Header.Set("User-Agent", "git-client/1.0")
 	// Ask the contents API for raw bytes; without this it returns a JSON
 	// envelope with the body base64-encoded inside.
 	req.Header.Set("Accept", "application/vnd.github.raw")

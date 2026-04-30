@@ -319,7 +319,7 @@ func (g *GitHubRelay) PruneStale(ctx context.Context, cutoff time.Time) (int, er
 	if err != nil {
 		return 0, fmt.Errorf("create tree: %w", err)
 	}
-	msg := fmt.Sprintf("thefeed: prune %d file(s)", len(entries))
+	msg := fmt.Sprintf("prune %d", len(entries))
 	commitSHA, err := g.createCommit(ctx, msg, newTree, []string{headSHA})
 	if err != nil {
 		return 0, fmt.Errorf("create commit: %w", err)
@@ -499,7 +499,7 @@ func (g *GitHubRelay) commitBatch(ctx context.Context, batch map[string]*pending
 	if err != nil {
 		return fmt.Errorf("create tree: %w", err)
 	}
-	msg := fmt.Sprintf("thefeed: upload %d file(s)", len(batch))
+	msg := fmt.Sprintf("upload %d", len(batch))
 	commitSHA, err := g.createCommit(ctx, msg, newTree, []string{headSHA})
 	if err != nil {
 		return fmt.Errorf("create commit: %w", err)
@@ -524,7 +524,20 @@ func (g *GitHubRelay) getRef(ctx context.Context, branch string) (string, error)
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%s — %s", resp.Status, string(body))
+		bodyStr := string(body)
+		// Detect "empty repo" by status + body message together. Don't
+		// trust status alone — GitHub uses 404 for missing branch,
+		// 409 for "Git Repository is empty.", and 409 also for other
+		// conflicts we don't want to silently bootstrap on top of.
+		if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusConflict) &&
+			strings.Contains(bodyStr, "Repository is empty") {
+			return g.bootstrapEmptyRepo(ctx, branch)
+		}
+		// Branch missing on a non-empty repo: caller can decide.
+		if resp.StatusCode == http.StatusNotFound {
+			return g.bootstrapEmptyRepo(ctx, branch)
+		}
+		return "", fmt.Errorf("%s — %s", resp.Status, bodyStr)
 	}
 	var out struct {
 		Object struct {
@@ -535,6 +548,47 @@ func (g *GitHubRelay) getRef(ctx context.Context, branch string) (string, error)
 		return "", err
 	}
 	return out.Object.SHA, nil
+}
+
+// bootstrapEmptyRepo initializes a fresh repo via the Contents API,
+// which is the only endpoint that works without an existing Git ref.
+// PUT'ing a single file auto-creates the branch with the initial commit;
+// after that the Git Data API works normally for batched uploads.
+// Returns the new commit SHA so the caller can use it as the parent.
+func (g *GitHubRelay) bootstrapEmptyRepo(ctx context.Context, branch string) (string, error) {
+	log.Printf("[gh-relay] bootstrapping empty repo on branch %s", branch)
+	payload := map[string]any{
+		"message": "init",
+		"content": base64.StdEncoding.EncodeToString([]byte{'\n'}),
+		"branch":  branch,
+	}
+	body, _ := json.Marshal(payload)
+	req, err := g.newReq(ctx, http.MethodPut, "/repos/"+g.cfg.Repo+"/contents/.gitkeep", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("bootstrap put: %s — %s", resp.Status, string(raw))
+	}
+	var out struct {
+		Commit struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("bootstrap decode: %w", err)
+	}
+	if out.Commit.SHA == "" {
+		return "", errors.New("bootstrap: no commit SHA in response")
+	}
+	return out.Commit.SHA, nil
 }
 
 func (g *GitHubRelay) getCommitTree(ctx context.Context, commitSHA string) (string, error) {
@@ -591,10 +645,11 @@ func (g *GitHubRelay) createBlob(ctx context.Context, content []byte) (string, e
 }
 
 func (g *GitHubRelay) createTree(ctx context.Context, baseTree string, entries any) (string, error) {
-	body, _ := json.Marshal(map[string]any{
-		"base_tree": baseTree,
-		"tree":      entries,
-	})
+	payload := map[string]any{"tree": entries}
+	if baseTree != "" {
+		payload["base_tree"] = baseTree
+	}
+	body, _ := json.Marshal(payload)
 	req, err := g.newReq(ctx, http.MethodPost, "/repos/"+g.cfg.Repo+"/git/trees", bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -619,6 +674,9 @@ func (g *GitHubRelay) createTree(ctx context.Context, baseTree string, entries a
 }
 
 func (g *GitHubRelay) createCommit(ctx context.Context, message, treeSHA string, parents []string) (string, error) {
+	if parents == nil {
+		parents = []string{}
+	}
 	body, _ := json.Marshal(map[string]any{
 		"message": message,
 		"tree":    treeSHA,
@@ -680,6 +738,6 @@ func (g *GitHubRelay) newReq(ctx context.Context, method, urlPath string, body i
 	req.Header.Set("Authorization", "Bearer "+g.cfg.Token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "thefeed-server")
+	req.Header.Set("User-Agent", "git-client/1.0")
 	return req, nil
 }
