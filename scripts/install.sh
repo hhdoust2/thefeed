@@ -855,3 +855,5 @@ case "$ACTION" in
         install_base
         install_thefeed "$REQUEST_VERSION" "$REQUEST_CHANNEL" ;;
 esac
+
+exit 0
