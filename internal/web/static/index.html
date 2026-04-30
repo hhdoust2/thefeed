@@ -4795,9 +4795,29 @@
         + '<div class="media-file-actions" id="' + domID + '-actions"></div>';
     }
 
+    // Read window.Android once. The native bridge is the WebView wrapper's
+    // way of getting around blob-URL / Web-Share limitations on Android.
+    var androidBridge = (typeof window !== 'undefined' && window.Android) ? window.Android : null;
+
+    function blobToBase64(blob) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          var result = fr.result || '';
+          var idx = result.indexOf(',');
+          resolve(idx >= 0 ? result.substring(idx + 1) : result);
+        };
+        fr.onerror = function () { reject(fr.error); };
+        fr.readAsDataURL(blob);
+      });
+    }
+
     function buildMediaActions(msgID, tag) {
       var isImage = mediaIsImageTag(tag);
-      var canShare = !!(navigator.share && navigator.canShare);
+      // On Android the native bridge always handles share, so we always
+      // show the share button there — unlike browser path which needs
+      // navigator.canShare support.
+      var canShare = !!androidBridge || !!(navigator.share && navigator.canShare);
       var openTitle = esc(t('media_open') || 'Open');
       var saveTitle = esc(t('media_save') || 'Save');
       var shareTitle = esc(t('media_share') || 'Share');
@@ -4812,13 +4832,21 @@
       return html;
     }
 
-    function mediaOpen(msgID) {
+    async function mediaOpen(msgID) {
       var entry = mediaBlobs[msgID];
       if (!entry) return;
       var card = document.getElementById('media-' + msgID);
       var tag = card ? card.getAttribute('data-tag') : '';
       if (mediaIsImageTag(tag) && entry.mime && /^image\//i.test(entry.mime)) {
         showImageLightbox(entry.url, mediaTagLabel(tag));
+        return;
+      }
+      if (androidBridge && androidBridge.openMedia) {
+        var fname = mediaFilenameFor(msgID, tag, entry.mime);
+        try {
+          var b64 = await blobToBase64(entry.blob);
+          androidBridge.openMedia(b64, entry.mime || 'application/octet-stream', fname);
+        } catch (e) { }
         return;
       }
       try {
@@ -4831,6 +4859,16 @@
         a.click();
         a.remove();
       } catch (e) { }
+    }
+
+    function mediaFilenameFor(msgID, tag, mime) {
+      var card = document.getElementById('media-' + msgID);
+      var fname = card ? (card.getAttribute('data-fname') || '') : '';
+      if (!fname) {
+        var ext = mediaExtForTag(tag, mime);
+        fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
+      }
+      return fname;
     }
 
     function showImageLightbox(blobURL, alt) {
@@ -4857,16 +4895,18 @@
       document.body.appendChild(overlay);
     }
 
-    function mediaSave(msgID) {
+    async function mediaSave(msgID) {
       var entry = mediaBlobs[msgID];
       if (!entry) return;
       var card = document.getElementById('media-' + msgID);
       var tag = card ? card.getAttribute('data-tag') : '';
-      // Use the wire-format filename when present, otherwise synthesise.
-      var fname = card ? (card.getAttribute('data-fname') || '') : '';
-      if (!fname) {
-        var ext = mediaExtForTag(tag, entry.mime);
-        fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
+      var fname = mediaFilenameFor(msgID, tag, entry.mime);
+      if (androidBridge && androidBridge.saveMedia) {
+        try {
+          var b64 = await blobToBase64(entry.blob);
+          androidBridge.saveMedia(b64, entry.mime || 'application/octet-stream', fname);
+        } catch (e) { }
+        return;
       }
       var a = document.createElement('a');
       a.href = entry.url;
@@ -4882,10 +4922,13 @@
       if (!entry) return;
       var card = document.getElementById('media-' + msgID);
       var tag = card ? card.getAttribute('data-tag') : '';
-      var fname = card ? (card.getAttribute('data-fname') || '') : '';
-      if (!fname) {
-        var ext = mediaExtForTag(tag, entry.mime);
-        fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
+      var fname = mediaFilenameFor(msgID, tag, entry.mime);
+      if (androidBridge && androidBridge.shareMedia) {
+        try {
+          var b64 = await blobToBase64(entry.blob);
+          androidBridge.shareMedia(b64, entry.mime || 'application/octet-stream', fname);
+        } catch (e) { }
+        return;
       }
       var file;
       try {
