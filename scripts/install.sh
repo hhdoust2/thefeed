@@ -701,6 +701,15 @@ install_thefeed() {
 
     # setup_config handles both first install and re-configuration
     setup_config
+
+    # Reload env from the just-written file. Wipe any THEFEED_*/TELEGRAM_*
+    # that leaked from setup_config's source of the OLD env file first —
+    # otherwise switching from no-telegram → telegram-login would still
+    # bake --no-telegram into the systemd unit because THEFEED_NO_TELEGRAM=1
+    # from the old file is still set in the shell.
+    while IFS= read -r v; do
+        unset "$v"
+    done < <(env | awk -F= '/^THEFEED_|^TELEGRAM_/{print $1}')
     set -a
     source "$DATA_DIR/thefeed.env"
     set +a
