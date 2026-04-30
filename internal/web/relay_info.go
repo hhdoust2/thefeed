@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,8 +161,7 @@ func (s *Server) serveFromGitHubRelay(w http.ResponseWriter, r *http.Request, si
 	encBody, _, err := fetchGitHubRaw(ctx, relayHTTPClient, url, size+int64(aeadOverhead))
 	if err != nil {
 		s.addLog(fmt.Sprintf("relay: fetch %s: %v", url, err))
-		// Not handled — caller falls back to DNS.
-		rc.invalidate() // refresh next time in case the repo URL changed
+
 		return false
 	}
 	body, err := protocol.DecryptRelayBlob(relayKey, encBody)
@@ -205,7 +205,25 @@ func fetchGitHubRaw(ctx context.Context, hc *http.Client, url string, expectedSi
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return nil, "", fmt.Errorf("github raw: %s", resp.Status)
+		// Surface enough context to tell rate-limit, abuse-detection,
+		// and plain auth errors apart. GitHub puts a JSON message in
+		// the body and rate-limit counters in the response headers.
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		rl := resp.Header.Get("X-RateLimit-Remaining")
+		reset := resp.Header.Get("X-RateLimit-Reset")
+		retry := resp.Header.Get("Retry-After")
+		hdr := ""
+		if rl != "" {
+			hdr += " rl-remaining=" + rl
+		}
+		if reset != "" {
+			hdr += " rl-reset=" + reset
+		}
+		if retry != "" {
+			hdr += " retry-after=" + retry
+		}
+		return nil, "", fmt.Errorf("github raw: %s%s — %s",
+			resp.Status, hdr, strings.TrimSpace(string(errBody)))
 	}
 	limit := expectedSize
 	if limit <= 0 {
