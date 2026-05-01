@@ -155,19 +155,11 @@ class MainActivity : ComponentActivity() {
     private fun registerBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Check if the chat view is open (mobile nav). If yes, go back
-                // to the channel list. If already on the channel list, minimize.
-                // Uses openSidebar() directly instead of webView.goBack() to avoid
-                // history-stack mismatches that can leave the UI stuck mid-transition.
-                webView.evaluateJavascript(
-                    "(document.getElementById('app').classList.contains('chat-open')).toString()"
-                ) { result ->
-                    if (result.trim('"') == "true") {
-                        webView.evaluateJavascript("openSidebar(); history.back();", null)
-                    } else {
-                        moveTaskToBack(true)
-                    }
-                }
+                // Delegate to JS — it knows about open lightboxes, modals,
+                // and chat-open state, and can show the close-confirmation
+                // dialog at app root. JS calls back through AndroidBridge
+                // (minimizeApp / killApp) when the user picks an option.
+                webView.evaluateJavascript("window.handleAndroidBack && window.handleAndroidBack();", null)
             }
         })
     }

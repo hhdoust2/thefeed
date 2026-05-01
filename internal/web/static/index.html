@@ -2606,6 +2606,10 @@
         media_slow_only: 'رله گیتهاب در دسترس نیست. دانلود از مسیر DNS خیلی کند است. ادامه می‌دهی؟',
         media_rate_limited: 'محدودیت گیتهاب پر شد ({n} دقیقه تا ریست). از مسیر DNS ادامه می‌دهیم.',
         media_rate_limited_short: 'محدودیت تعداد درخواست گیتهاب',
+        close_confirm: 'بستن thefeed؟',
+        close_cancel: 'نبند',
+        close_background: 'بستن، اما در پس‌زمینه فعال بمونه',
+        close_kill: 'بستن و توقف کامل سرویس',
         media_size_mismatch: 'سایز فایل با چیزی که سرور گفته بود نمی‌خونه',
         clear_cache: 'پاک کردن کش', clear_cache_btn: '🗑 پاک کردن کش', cache_cleared: 'کش پاک شد!',
         saved_resolvers_title: 'شروع سریع',
@@ -2775,6 +2779,10 @@
         media_slow_only: 'GitHub relay is unavailable for this file. The DNS path is very slow. Download anyway?',
         media_rate_limited: 'GitHub rate limit hit ({n} min until reset). Falling back to slow DNS path.',
         media_rate_limited_short: 'GitHub rate limit',
+        close_confirm: 'Close thefeed?',
+        close_cancel: "Don't close",
+        close_background: 'Close UI but keep running in background',
+        close_kill: 'Close and stop the service',
         media_size_mismatch: 'Downloaded size doesn\'t match the manifest',
         clear_cache: 'Clear Cache', clear_cache_btn: '🗑 Clear Cache', cache_cleared: 'Cache cleared!',
         saved_resolvers_title: 'Quick Start',
@@ -4818,6 +4826,55 @@
     // way of getting around blob-URL / Web-Share limitations on Android.
     var androidBridge = (typeof window !== 'undefined' && window.Android) ? window.Android : null;
 
+    // Single entry point invoked by MainActivity.kt's back-press handler.
+    // Returns nothing — the JS side resolves the action itself, calling
+    // back into the bridge for "minimize"/"kill" if the user picks one
+    // of those from the close-confirmation dialog.
+    window.handleAndroidBack = async function () {
+      if (closeMediaLightbox()) return;
+      var openModal = document.querySelector('.modal-overlay.active');
+      if (openModal) { openModal.classList.remove('active'); return; }
+      if (mobileQuery.matches && document.getElementById('app').classList.contains('chat-open')) {
+        openSidebar();
+        return;
+      }
+      // At app root — confirm before closing/killing the process.
+      var choice = await showCloseConfirm();
+      if (choice === 'background' && androidBridge && androidBridge.minimizeApp) {
+        androidBridge.minimizeApp();
+      } else if (choice === 'kill' && androidBridge && androidBridge.killApp) {
+        androidBridge.killApp();
+      }
+      // 'cancel' or unknown → stay in the app.
+    };
+
+    function showCloseConfirm() {
+      return new Promise(function (resolve) {
+        var existing = document.getElementById('closeConfirmModal');
+        if (existing) existing.remove();
+        var overlay = document.createElement('div');
+        overlay.id = 'closeConfirmModal';
+        overlay.className = 'modal-overlay active';
+        overlay.innerHTML =
+          '<div class="modal" style="max-width:380px">'
+          + '<p style="font-size:14px;color:var(--text);margin-bottom:18px;line-height:1.6">'
+          + esc(t('close_confirm') || 'Close thefeed?') + '</p>'
+          + '<div class="modal-actions" style="flex-direction:column;gap:8px">'
+          + '<button class="btn btn-flat" id="closeCancelBtn">' + esc(t('close_cancel') || "Don't close") + '</button>'
+          + '<button class="btn btn-flat" id="closeBgBtn">' + esc(t('close_background') || 'Close, keep running in background') + '</button>'
+          + '<button class="btn btn-primary" id="closeKillBtn" style="background:var(--danger,#e74c3c)">' + esc(t('close_kill') || 'Close and stop service') + '</button>'
+          + '</div></div>';
+        document.body.appendChild(overlay);
+        var done = function (choice) {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          resolve(choice);
+        };
+        document.getElementById('closeCancelBtn').onclick = function () { done('cancel'); };
+        document.getElementById('closeBgBtn').onclick = function () { done('background'); };
+        document.getElementById('closeKillBtn').onclick = function () { done('kill'); };
+      });
+    }
+
     function blobToBase64(blob) {
       return new Promise(function (resolve, reject) {
         var fr = new FileReader();
@@ -4909,6 +4966,7 @@
         var media = overlay.querySelector('audio,video');
         if (media) { try { media.pause(); } catch (e) { } }
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        mediaLightboxCloser = null;
       };
       var onClick = function (e) {
         if (e.target === overlay || (e.target.classList && e.target.classList.contains('media-lightbox-close'))) {
@@ -4919,6 +4977,7 @@
       overlay.addEventListener('click', onClick);
       document.addEventListener('keydown', onKey);
       document.body.appendChild(overlay);
+      mediaLightboxCloser = close;
     }
 
     function mediaFilenameFor(msgID, tag, mime) {
@@ -4929,6 +4988,19 @@
         fname = (mediaTagLabel(tag || 'FILE') + '-' + msgID + '.' + ext).toLowerCase();
       }
       return fname;
+    }
+
+    // Tracked close handler so the Android back button (and any other
+    // place outside the lightbox) can dismiss it cleanly.
+    var mediaLightboxCloser = null;
+
+    function closeMediaLightbox() {
+      if (mediaLightboxCloser) {
+        try { mediaLightboxCloser(); } catch (e) { }
+        mediaLightboxCloser = null;
+        return true;
+      }
+      return false;
     }
 
     function showImageLightbox(blobURL, alt) {
@@ -4943,8 +5015,12 @@
         overlay.removeEventListener('click', onClick);
         document.removeEventListener('keydown', onKey);
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        mediaLightboxCloser = null;
       };
       var onClick = function (e) {
+        // Don't dismiss while pinching/dragging — the click event fires
+        // on touchend after a multi-touch zoom and would close the box.
+        if (zoomBusy) return;
         if (e.target === overlay || (e.target.classList && e.target.classList.contains('media-lightbox-close'))) {
           close();
         }
@@ -4953,6 +5029,84 @@
       overlay.addEventListener('click', onClick);
       document.addEventListener('keydown', onKey);
       document.body.appendChild(overlay);
+      mediaLightboxCloser = close;
+
+      // Pinch-zoom + pan + double-tap on the image.
+      var imgEl = overlay.querySelector('.media-lightbox-img');
+      var zoomBusy = false;
+      attachPinchZoom(imgEl, function (busy) { zoomBusy = busy; });
+    }
+
+    // Two-finger pinch + drag-to-pan + double-tap toggle. Uses
+    // CSS transform so we don't need a library. busyCb fires true on
+    // multi-touch start and false a tick after touchend so the click
+    // close handler can ignore the trailing tap.
+    function attachPinchZoom(el, busyCb) {
+      var scale = 1, startScale = 1;
+      var translateX = 0, translateY = 0;
+      var startTX = 0, startTY = 0;
+      var pinchStartDist = 0;
+      var lastTap = 0;
+      var lastTouchEnd = 0;
+      el.style.touchAction = 'none';
+      el.style.transformOrigin = 'center center';
+      el.style.transition = 'transform 0.1s ease-out';
+
+      function apply() {
+        el.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+      }
+      function distance(t0, t1) {
+        var dx = t0.clientX - t1.clientX;
+        var dy = t0.clientY - t1.clientY;
+        return Math.hypot(dx, dy);
+      }
+      el.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 2) {
+          pinchStartDist = distance(e.touches[0], e.touches[1]);
+          startScale = scale;
+          if (busyCb) busyCb(true);
+        } else if (e.touches.length === 1 && scale > 1) {
+          startTX = e.touches[0].clientX - translateX;
+          startTY = e.touches[0].clientY - translateY;
+          if (busyCb) busyCb(true);
+        }
+      }, { passive: true });
+      el.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 2 && pinchStartDist > 0) {
+          e.preventDefault();
+          var d = distance(e.touches[0], e.touches[1]);
+          scale = Math.max(1, Math.min(5, startScale * d / pinchStartDist));
+          if (scale === 1) { translateX = 0; translateY = 0; }
+          apply();
+        } else if (e.touches.length === 1 && scale > 1) {
+          e.preventDefault();
+          translateX = e.touches[0].clientX - startTX;
+          translateY = e.touches[0].clientY - startTY;
+          apply();
+        }
+      }, { passive: false });
+      el.addEventListener('touchend', function () {
+        lastTouchEnd = Date.now();
+        // Snap back: clear busy flag a tick later so the trailing
+        // synthetic click event can be filtered.
+        setTimeout(function () { if (busyCb) busyCb(false); }, 50);
+        pinchStartDist = 0;
+      });
+      el.addEventListener('click', function (e) {
+        // Ignore clicks that immediately follow a pinch.
+        if (Date.now() - lastTouchEnd < 100) { e.stopPropagation(); return; }
+        var now = Date.now();
+        if (now - lastTap < 300) {
+          e.stopPropagation();
+          if (scale === 1) {
+            scale = 2;
+          } else {
+            scale = 1; translateX = 0; translateY = 0;
+          }
+          apply();
+        }
+        lastTap = now;
+      });
     }
 
     async function mediaSave(msgID) {

@@ -28,6 +28,27 @@ class AndroidBridge(private val activity: Activity) {
     @JavascriptInterface
     fun isAndroid(): Boolean = true
 
+    // ===== App lifecycle (back-button confirmation) =====
+
+    @JavascriptInterface
+    fun minimizeApp() {
+        Handler(Looper.getMainLooper()).post {
+            activity.moveTaskToBack(true)
+        }
+    }
+
+    @JavascriptInterface
+    fun killApp() {
+        Handler(Looper.getMainLooper()).post {
+            activity.stopService(Intent(activity, ThefeedService::class.java))
+            activity.finishAndRemoveTask()
+            // Belt-and-braces: ensure the JVM exits even if a stray
+            // foreground notification or pending Intent keeps the
+            // process alive after finishAndRemoveTask().
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
+    }
+
     // ===== Language =====
 
     @JavascriptInterface
