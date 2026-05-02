@@ -186,16 +186,16 @@ jobs:
           ./gradlew --no-daemon clean $TASK
 
           APK_DIR=app/build/outputs/apk/$BT
-          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thefeed-android-${VERSION}-arm64.apk
-          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-${VERSION}-arm.apk
+          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thefeed-android-${VERSION}-arm64-v8a.apk
+          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thefeed-android-${VERSION}-armeabi-v7a.apk
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: thefeed-android-apk
           path: |
-            artifacts/thefeed-android-*-arm64.apk
-            artifacts/thefeed-android-*-arm.apk
+            artifacts/thefeed-android-*-arm64-v8a.apk
+            artifacts/thefeed-android-*-armeabi-v7a.apk
 
   release:
     needs: [build, android-apk]
@@ -227,5 +227,5 @@ jobs:
             | FreeBSD | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-amd64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-freebsd-amd64) |
             | FreeBSD | arm64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-freebsd-arm64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-freebsd-arm64) |
             | Windows | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-server-windows-amd64.exe) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-client-${{ github.ref_name }}-windows-amd64.exe) |
-            | Android | arm64 (v8a) | [thefeed-android-${{ github.ref_name }}-arm64.apk - اندروید](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm64.apk) |
-            | Android | arm (v7a)   | [thefeed-android-${{ github.ref_name }}-arm.apk - اندروید (دستگاه‌های قدیمی‌تر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm.apk) |
+            | Android | arm64-v8a (most modern phones) | [thefeed-android-${{ github.ref_name }}-arm64-v8a.apk - اندروید (گوشی‌های جدید)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-arm64-v8a.apk) |
+            | Android | armeabi-v7a (older 32-bit phones) | [thefeed-android-${{ github.ref_name }}-armeabi-v7a.apk - اندروید (دستگاه‌های قدیمی‌تر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thefeed-android-${{ github.ref_name }}-armeabi-v7a.apk) |

@@ -438,7 +438,11 @@ chmod +x thefeed-client
 
 #### Android (Native APK Wrapper)
 
-> download it from the latest release assets: `thefeed-android-arm64.apk`
+> download it from the latest release assets:
+> - `thefeed-android-<version>-arm64-v8a.apk` — modern 64-bit phones (most devices since 2017)
+> - `thefeed-android-<version>-armeabi-v7a.apk` — older 32-bit phones
+>
+> If you install the wrong one, Android may accept the install but the bundled native binary won't run. Pick `arm64-v8a` unless you know your device is 32-bit only.
 
 The Android app automatically requests battery optimization exemption on first launch so the background service is not killed by the OS.
 
@@ -539,8 +543,8 @@ Rule:
 
 Release assets include:
 - Server/client binaries for all current target platforms
-- Native Android wrapper APK (raw client): `thefeed-android-arm64.apk`
-- Native Android wrapper APK (UPX client): `thefeed-android-arm64-upx.apk`
+- Native Android wrapper APK (64-bit, recommended): `thefeed-android-<version>-arm64-v8a.apk`
+- Native Android wrapper APK (32-bit, legacy devices): `thefeed-android-<version>-armeabi-v7a.apk`
 
 ## DNS Records Setup
 
