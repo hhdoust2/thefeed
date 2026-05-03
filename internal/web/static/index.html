@@ -3542,6 +3542,15 @@
           applyLang();
         }
         if (s.version) { appVersion = s.version; renderAppVersion(s.version, s.commit); }
+        // Sync the server-persisted "don't show scan prompt" flag
+        // into localStorage. Android picks a new 127.0.0.1 port on
+        // each launch, so localStorage alone wouldn't survive
+        // restart — the server-side flag is the source of truth.
+        if (s.scanPromptOff === true) {
+          localStorage.setItem('thefeed_scan_prompt_off', '1');
+        } else if (s.scanPromptOff === false) {
+          localStorage.removeItem('thefeed_scan_prompt_off');
+        }
         renderLatestVersion();
       } catch (e) { }
     }
@@ -3721,19 +3730,27 @@
       if (promptEl) promptEl.checked = localStorage.getItem('thefeed_scan_prompt_off') !== '1';
     }
 
-    // Toggle the localStorage flag that controls whether the startup
-    // scan prompt is shown. Cleared when the box is checked, set to
-    // "1" when unchecked.
+    // Toggle the "show startup scan prompt" preference. Persists
+    // both client-side (localStorage for fast boot) and server-side
+    // (so Android keeps it across launches even when the WebView
+    // origin port changes).
     function setShowScanPrompt(enabled) {
       if (enabled) {
         localStorage.removeItem('thefeed_scan_prompt_off');
-        // Also clear the per-session "already shown" flag so the
-        // prompt appears next time the user reloads — without this
-        // re-enabling does nothing until they restart the browser.
+        // Clear the per-session "already shown" flag so the prompt
+        // re-appears on the next reload — without this, re-enabling
+        // does nothing until the browser tab is closed.
         sessionStorage.removeItem('thefeed_scan_prompt_shown');
       } else {
         localStorage.setItem('thefeed_scan_prompt_off', '1');
       }
+      try {
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scanPromptOff: !enabled })
+        });
+      } catch (e) { }
     }
     function closeSettings() { document.getElementById('settingsModal').classList.remove('active') }
     async function saveSettings() {
@@ -4406,9 +4423,18 @@
       sessionStorage.setItem('thefeed_scan_prompt_shown', '1');
     }
     function savedResolversNever() {
-      // "Don't show again" — persist across sessions. The user can
-      // un-tick it from Settings → Show startup scan prompt.
+      // "Don't show again" — persist across sessions. localStorage
+      // for fast access, /api/settings for survival across Android
+      // restarts (the WebView origin port changes each launch, so
+      // localStorage alone gets reset).
       localStorage.setItem('thefeed_scan_prompt_off', '1');
+      try {
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scanPromptOff: true })
+        });
+      } catch (e) { }
       savedResolversSkip();
       showToast(t('startup_scan_off') || 'Startup scan prompt disabled');
     }

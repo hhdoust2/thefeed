@@ -115,6 +115,11 @@ type ProfileList struct {
 	// single list named "Default".
 	ActiveLists  []ActiveList `json:"activeLists,omitempty"`
 	SelectedList string       `json:"selectedList,omitempty"`
+	// ScanPromptOff suppresses the startup "scan resolvers?" prompt.
+	// Persisted server-side so it survives Android's per-launch port
+	// changes (each launch picks a fresh port → different localStorage
+	// origin → flag was lost on every restart).
+	ScanPromptOff bool `json:"scanPromptOff,omitempty"`
 }
 
 // lastScanData is the on-disk structure for last_scan.json.
@@ -2581,14 +2586,15 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if pl == nil {
 			pl = &ProfileList{}
 		}
-		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "theme": pl.Theme, "lang": pl.Lang, "version": version.Version, "commit": version.Commit})
+		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "theme": pl.Theme, "lang": pl.Lang, "scanPromptOff": pl.ScanPromptOff, "version": version.Version, "commit": version.Commit})
 
 	case http.MethodPost:
 		var req struct {
-			FontSize int    `json:"fontSize"`
-			Debug    bool   `json:"debug"`
-			Theme    string `json:"theme"`
-			Lang     string `json:"lang"`
+			FontSize      int    `json:"fontSize"`
+			Debug         bool   `json:"debug"`
+			Theme         string `json:"theme"`
+			Lang          string `json:"lang"`
+			ScanPromptOff *bool  `json:"scanPromptOff"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", 400)
@@ -2611,6 +2617,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Lang == "fa" || req.Lang == "en" {
 			pl.Lang = req.Lang
+		}
+		if req.ScanPromptOff != nil {
+			pl.ScanPromptOff = *req.ScanPromptOff
 		}
 		if err := s.saveProfiles(pl); err != nil {
 			http.Error(w, fmt.Sprintf("save: %v", err), 500)
