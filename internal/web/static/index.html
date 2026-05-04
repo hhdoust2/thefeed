@@ -3547,11 +3547,11 @@
         updateNextFetchDisplay();
         await loadChannels();
         // Land on the channel list; don't auto-open the first channel.
-        // Users on mobile may be tapping while we load and the auto-open
-        // races with their touch.
         if (!channels || channels.length === 0) {
           showInitProgress(); await doRefresh();
         } else {
+          // Mobile: make sure the sidebar is visible so the user can pick.
+          openSidebar();
           document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || '') + '</p></div>';
         }
         startAutoRefresh();
@@ -4537,11 +4537,33 @@
           }
           return;
         }
+        // Another tab/device switched the active profile.
+        if (data === 'profiles') {
+          var prevActive = activeProfileId;
+          await loadProfiles();
+          if (activeProfileId !== prevActive) {
+            // The active profile changed under us — drop stale local state
+            // so the user doesn't see the old profile's channel/messages.
+            selectedChannel = 0;
+            channels = [];
+            document.getElementById('chatName').textContent = 'thefeed';
+            document.getElementById('chatSub').textContent = '';
+            openSidebar();
+          }
+          if (document.getElementById('profilesModal').classList.contains('active')) {
+            renderProfilesModal();
+          }
+          return;
+        }
         var wasEmpty = channels.length === 0;
         var snapChannel = selectedChannel;
         await loadChannels();
         if (wasEmpty && channels.length > 0 && selectedChannel === 0) {
           closeProfiles();
+          // Flip to the sidebar on mobile so the user can see and pick a
+          // channel — the empty-state hint is invisible while the chat
+          // panel covers the screen.
+          openSidebar();
           document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || '') + '</p></div>';
           return;
         }
@@ -4770,13 +4792,20 @@
         document.getElementById('chatName').textContent = 'thefeed';
         document.getElementById('chatSub').textContent = '';
         document.getElementById('progressPanel').innerHTML = '';
-        document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || t('switching')) + '</p></div>';
+        document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + t('switching') + '</p></div>';
         // On desktop the chat panel is always visible; collapse it back to
         // the sidebar so the empty state doesn't sit next to a stale header.
         openSidebar();
         await loadProfiles(); closeProfiles();
         await loadChannels();
-        if (channels.length === 0) { showInitProgress(); await doRefresh(); }
+        if (channels.length === 0) {
+          // No cache for this profile — DNS metadata fetch is in flight; the
+          // SSE 'update' handler will replace this with the "pick a channel"
+          // hint once channels actually arrive.
+          showInitProgress(); await doRefresh();
+        } else {
+          document.getElementById('messages').innerHTML = '<div class="empty-state"><p>' + (t('select_channel_hint') || '') + '</p></div>';
+        }
       } catch (e) { }
     }
 

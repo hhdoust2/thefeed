@@ -2484,6 +2484,7 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		s.broadcast("event: update\ndata: \"profiles\"\n\n")
 		writeJSON(w, map[string]any{"ok": true, "profiles": pl})
 
 	default:
@@ -2553,6 +2554,10 @@ func (s *Server) handleProfileSwitch(w http.ResponseWriter, r *http.Request) {
 	s.lastMsgIDs = make(map[int]uint32)
 	s.lastHashes = make(map[int]uint32)
 	s.mu.Unlock()
+	// Tell every connected client (other tabs / devices) that the active
+	// profile changed so they refresh their UI instead of pointing at the
+	// old one.
+	s.broadcast("event: update\ndata: \"profiles\"\n\n")
 	if cc != nil {
 		s.broadcast("event: update\ndata: \"channels\"\n\n")
 	}
