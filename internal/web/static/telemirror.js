@@ -257,19 +257,47 @@
       var msg = (tmI18n('telemirror_refresh_warn',
         'You refreshed this channel {n} sec ago. Refreshing too often can hit a rate limit and stop working for a while. Refresh anyway?')
       ).replace('{n}', ageSec);
-      // Reuse the main app's themed confirm dialog if available.
-      var ok;
-      if (typeof showConfirmDialog === 'function') {
-        ok = await showConfirmDialog(msg,
-          tmI18n('telemirror_refresh_yes', 'Refresh'),
-          tmI18n('cancel', 'Cancel'));
-      } else {
-        ok = window.confirm(msg);
-      }
+      var ok = await tmConfirm(msg,
+        tmI18n('telemirror_refresh_yes', 'Refresh'),
+        tmI18n('cancel', 'Cancel'));
       if (!ok) return;
     }
     tmSelect(tmActive, { refresh: true });
   };
+
+  // tmConfirm — a Promise-based yes/no dialog that mounts INSIDE the
+  // telemirror modal so it sits above the drawer/backdrop. The main
+  // app's showConfirmDialog appends to <body> and lives at a lower
+  // z-index, so it ended up hidden behind our z:9000 modal.
+  function tmConfirm(message, yesText, noText) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('telemirrorModal');
+      if (!modal) { resolve(window.confirm(message)); return; }
+      var overlay = document.createElement('div');
+      overlay.className = 'tm-confirm-overlay';
+      overlay.innerHTML =
+        '<div class="tm-confirm-box">'
+        +   '<p class="tm-confirm-msg"></p>'
+        +   '<div class="tm-confirm-actions">'
+        +     '<button class="btn btn-flat" data-tm-no></button>'
+        +     '<button class="btn btn-primary" data-tm-yes></button>'
+        +   '</div>'
+        + '</div>';
+      overlay.querySelector('.tm-confirm-msg').textContent = message;
+      overlay.querySelector('[data-tm-yes]').textContent = yesText || tmI18n('ok', 'OK');
+      overlay.querySelector('[data-tm-no]').textContent  = noText  || tmI18n('cancel', 'Cancel');
+      var done = function (val) {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(val);
+      };
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) done(false);
+      });
+      overlay.querySelector('[data-tm-no]').addEventListener('click', function () { done(false); });
+      overlay.querySelector('[data-tm-yes]').addEventListener('click', function () { done(true); });
+      modal.appendChild(overlay);
+    });
+  }
 
   function tmRenderTopbar(channel, username) {
     var name = (channel && channel.title) || username;

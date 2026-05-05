@@ -1311,6 +1311,34 @@
        a permanent broken-image icon. */
     .tm-photo-failed { display: none }
 
+    /* Confirm dialog rendered inside the telemirror modal so it sits
+       on top of the drawer / backdrop / posts at the right stacking. */
+    .tm-confirm-overlay {
+      position: absolute; inset: 0;
+      z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      background: rgba(0,0,0,.55);
+      animation: tm-fade-in .15s ease
+    }
+    @keyframes tm-fade-in { from { opacity: 0 } to { opacity: 1 } }
+    .tm-confirm-box {
+      max-width: 380px; width: 100%;
+      background: var(--bg-elevated, var(--bg));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px 14px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.4)
+    }
+    .tm-confirm-msg {
+      margin: 0 0 14px;
+      font-size: 13px; line-height: 1.7;
+      color: var(--text)
+    }
+    .tm-confirm-actions {
+      display: flex; gap: 8px; justify-content: flex-end
+    }
+
     /* First-visit hint — points the user at the channel list. */
     .tm-first-hint {
       margin: auto;
@@ -6608,6 +6636,19 @@
     // of those from the close-confirmation dialog.
     window.handleAndroidBack = async function () {
       if (closeMediaLightbox()) return;
+      // Telemirror has its own full-screen modal (.tm-modal, not
+      // .modal-overlay). Drawer first, then modal, then anything else.
+      var tmModal = document.getElementById('telemirrorModal');
+      if (tmModal && tmModal.classList.contains('active')) {
+        var tmSb = document.getElementById('tmSidebar');
+        if (tmSb && tmSb.classList.contains('open')) {
+          tmSb.classList.remove('open');
+          return;
+        }
+        if (typeof closeTelemirror === 'function') closeTelemirror();
+        else tmModal.classList.remove('active');
+        return;
+      }
       var openModal = document.querySelector('.modal-overlay.active');
       if (openModal) { openModal.classList.remove('active'); return; }
       if (mobileQuery.matches && document.getElementById('app').classList.contains('chat-open')) {
