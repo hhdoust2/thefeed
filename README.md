@@ -122,6 +122,7 @@ Thank you for your support ❤️
 - Public TheFeed Configs: [@thefeedconfig](https://t.me/thefeedconfig)
 - Setup TheFeed server guide: [@networkti](https://t.me/networkti/25)
 - Setup TheFeed server with SlipGate guide: [@networkti](https://t.me/networkti/200)
+- Roadmap / task board: [GitHub project](https://github.com/users/sartoopjj/projects/1/views/1)
 
 ## Quick Install (Server)
 

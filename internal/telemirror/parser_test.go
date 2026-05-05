@@ -109,6 +109,258 @@ func TestParseHTMLPosts(t *testing.T) {
 	}
 }
 
+// Telegram embeds the reply preview INSIDE the message wrapper, BEFORE
+// the actual message body. Both the snippet and the body use the
+// `tgme_widget_message_text` class. The parser must pick the body, not
+// the snippet, and must surface the reply metadata as Post.Reply.
+const replyPostHTML = `<!DOCTYPE html><html><body>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="sample/200">
+    <a class="tgme_widget_message_reply" href="https://t.me/sample/198">
+      <span class="tgme_widget_message_author_name">Original Author</span>
+      <div class="tgme_widget_message_text">quoted snippet of original</div>
+    </a>
+    <div class="tgme_widget_message_text">actual reply body</div>
+  </div>
+</div>
+</body></html>`
+
+func TestParseHTMLReply(t *testing.T) {
+	_, posts, err := ParseHTML(replyPostHTML)
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+	if len(posts) != 1 {
+		t.Fatalf("posts = %d, want 1", len(posts))
+	}
+	p := posts[0]
+	if !strings.Contains(p.Text, "actual reply body") {
+		t.Errorf("Post.Text = %q, want main body, not snippet", p.Text)
+	}
+	if strings.Contains(p.Text, "quoted snippet") {
+		t.Errorf("Post.Text leaked the reply snippet: %q", p.Text)
+	}
+	if p.Reply == nil {
+		t.Fatalf("Post.Reply nil; want populated reply preview")
+	}
+	if p.Reply.Author != "Original Author" {
+		t.Errorf("Reply.Author = %q", p.Reply.Author)
+	}
+	if !strings.Contains(p.Reply.Text, "quoted snippet") {
+		t.Errorf("Reply.Text = %q", p.Reply.Text)
+	}
+	if p.Reply.URL != "https://t.me/sample/198" {
+		t.Errorf("Reply.URL = %q", p.Reply.URL)
+	}
+}
+
+const forwardPostHTML = `<!DOCTYPE html><html><body>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="sample/201">
+    <div class="tgme_widget_message_forwarded_from">
+      Forwarded from <a class="tgme_widget_message_forwarded_from_name" href="https://t.me/source">Source Channel</a>
+    </div>
+    <div class="tgme_widget_message_text">forwarded post body</div>
+  </div>
+</div>
+</body></html>`
+
+func TestParseHTMLForward(t *testing.T) {
+	_, posts, err := ParseHTML(forwardPostHTML)
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+	if len(posts) != 1 {
+		t.Fatalf("posts = %d, want 1", len(posts))
+	}
+	p := posts[0]
+	if p.Forward == nil {
+		t.Fatalf("Post.Forward nil; want populated forward header")
+	}
+	if p.Forward.Author != "Source Channel" {
+		t.Errorf("Forward.Author = %q", p.Forward.Author)
+	}
+	if p.Forward.URL != "https://t.me/source" {
+		t.Errorf("Forward.URL = %q", p.Forward.URL)
+	}
+	if !strings.Contains(p.Text, "forwarded post body") {
+		t.Errorf("Post.Text = %q", p.Text)
+	}
+}
+
+const pollPostHTML = `<!DOCTYPE html><html><body>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="sample/202">
+    <div class="tgme_widget_message_poll">
+      <div class="tgme_widget_message_poll_question">Favourite colour?</div>
+      <div class="tgme_widget_message_poll_type">Public vote</div>
+      <div class="tgme_widget_message_poll_option">
+        <div class="tgme_widget_message_poll_option_text">Red</div>
+      </div>
+      <div class="tgme_widget_message_poll_option">
+        <div class="tgme_widget_message_poll_option_text">Blue</div>
+      </div>
+      <div class="tgme_widget_message_poll_option">
+        <div class="tgme_widget_message_poll_option_text">Green</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>`
+
+func TestParseHTMLPollOptions(t *testing.T) {
+	_, posts, err := ParseHTML(pollPostHTML)
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+	if len(posts) != 1 || len(posts[0].Media) != 1 {
+		t.Fatalf("posts/media wrong shape: posts=%d media=%d", len(posts), len(posts[0].Media))
+	}
+	m := posts[0].Media[0]
+	if m.Type != "poll" {
+		t.Errorf("Media.Type = %q, want poll", m.Type)
+	}
+	if m.Title != "Favourite colour?" {
+		t.Errorf("Media.Title = %q", m.Title)
+	}
+	if m.Subtitle != "Public vote" {
+		t.Errorf("Media.Subtitle = %q", m.Subtitle)
+	}
+	wantOpts := []string{"Red", "Blue", "Green"}
+	if len(m.Options) != len(wantOpts) {
+		t.Fatalf("Options = %v, want %v", m.Options, wantOpts)
+	}
+	for i, want := range wantOpts {
+		if m.Options[i] != want {
+			t.Errorf("Options[%d] = %q, want %q", i, m.Options[i], want)
+		}
+	}
+}
+
+func TestDecodeTranslateHost(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"t-me", "t.me"},
+		{"cdn4-telegram-org", "cdn4.telegram.org"},
+		{"my--domain-com", "my-domain.com"},
+		{"a--b--c-d", "a-b-c.d"},
+		{"plain", "plain"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := decodeTranslateHost(c.in); got != c.want {
+			t.Errorf("decodeTranslateHost(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestRewriteTranslateLink(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{
+			"https://t-me.translate.goog/sample/123",
+			"https://t.me/sample/123",
+		},
+		{
+			"https://example-com.translate.goog/path?_x_tr_sl=auto&_x_tr_tl=en&q=keep",
+			"https://example.com/path?q=keep",
+		},
+		{
+			"https://my--domain-com.translate.goog/x",
+			"https://my-domain.com/x",
+		},
+		// Untouched: not a translate.goog URL.
+		{"https://example.com/foo", "https://example.com/foo"},
+		// Untouched: empty.
+		{"", ""},
+		// Tracking-only query string collapses to no query string.
+		{
+			"https://t-me.translate.goog/sample?_x_tr_pto=wapp",
+			"https://t.me/sample",
+		},
+		// Wrapper form: translate.google.com/website?u=<original>
+		{
+			"https://translate.google.com/website?sl=auto&tl=fa&hl=en&client=webapp&u=https://seup.shop/f/rdzq",
+			"https://seup.shop/f/rdzq",
+		},
+		// Wrapper form, /translate path also works.
+		{
+			"https://translate.google.com/translate?sl=en&tl=fa&u=https://example.com/page",
+			"https://example.com/page",
+		},
+		// Wrapper form pointing at a goog inline-proxy URL — recurse.
+		{
+			"https://translate.google.com/website?u=https://t-me.translate.goog/networkti",
+			"https://t.me/networkti",
+		},
+	}
+	for _, c := range cases {
+		if got := rewriteTranslateLink(c.in); got != c.want {
+			t.Errorf("rewriteTranslateLink(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestRewriteTranslateLinksInHTML(t *testing.T) {
+	in := `Check <a href="https://t-me.translate.goog/sample/123">this post</a> ` +
+		`and <a href="https://example-com.translate.goog/?_x_tr_sl=auto">this site</a>. ` +
+		`<img src="https://cdn-translate.goog/img.jpg"> stays.`
+	got := rewriteTranslateLinksInHTML(in)
+	if !strings.Contains(got, `href="https://t.me/sample/123"`) {
+		t.Errorf("translate.goog href not rewritten: %q", got)
+	}
+	if !strings.Contains(got, `href="https://example.com/"`) {
+		t.Errorf("example-com.translate.goog href not rewritten or query not stripped: %q", got)
+	}
+	if !strings.Contains(got, `src="https://cdn-translate.goog/img.jpg"`) {
+		t.Errorf("img src should NOT be rewritten (we serve images via the proxy): %q", got)
+	}
+	// Sanity check: untouched HTML round-trips without the rewriter
+	// damaging it.
+	plain := "no proxy links here, just <b>text</b>"
+	if got := rewriteTranslateLinksInHTML(plain); got != plain {
+		t.Errorf("plain html mutated: %q", got)
+	}
+}
+
+func TestParseHTMLRewritesPostLinks(t *testing.T) {
+	const sample = `<!DOCTYPE html><html><body>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="sample/300">
+    <div class="tgme_widget_message_text">
+      Visit <a href="https://t-me.translate.goog/networkti">@networkti</a> and
+      <a href="https://example-com.translate.goog/article?_x_tr_sl=auto&_x_tr_tl=en">read</a>,
+      and try <a href="https://translate.google.com/website?sl=auto&tl=fa&u=https://seup.shop/f/rdzq">this site</a>.
+    </div>
+  </div>
+</div>
+</body></html>`
+	_, posts, err := ParseHTML(sample)
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+	if len(posts) != 1 {
+		t.Fatalf("posts = %d, want 1", len(posts))
+	}
+	if !strings.Contains(posts[0].Text, `href="https://t.me/networkti"`) {
+		t.Errorf("Post.Text didn't rewrite t-me link: %q", posts[0].Text)
+	}
+	if !strings.Contains(posts[0].Text, `href="https://seup.shop/f/rdzq"`) {
+		t.Errorf("Post.Text didn't unwrap translate.google.com/website wrapper: %q", posts[0].Text)
+	}
+	if strings.Contains(posts[0].Text, "translate.goog") {
+		t.Errorf("translate.goog leaked in Post.Text: %q", posts[0].Text)
+	}
+	if strings.Contains(posts[0].Text, "translate.google.com") {
+		t.Errorf("translate.google.com wrapper leaked in Post.Text: %q", posts[0].Text)
+	}
+	if strings.Contains(posts[0].Text, "_x_tr_") {
+		t.Errorf("_x_tr_ tracking params leaked: %q", posts[0].Text)
+	}
+}
+
 func TestParseHTMLEmpty(t *testing.T) {
 	ch, posts, err := ParseHTML("<html></html>")
 	if err != nil {

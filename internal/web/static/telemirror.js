@@ -360,6 +360,28 @@
       }
       html += '</div>';
 
+      if (p.forward && p.forward.author) {
+        var fwdLabel = tmI18n('telemirror_forwarded_from', 'Forwarded from');
+        var fwdName  = tmEsc(p.forward.author);
+        if (p.forward.url) {
+          fwdName = '<a href="' + tmEscAttr(p.forward.url) + '" target="_blank" rel="noopener noreferrer">'
+            + fwdName + '</a>';
+        }
+        html += '<div class="tm-post-forward">↪ ' + tmEsc(fwdLabel) + ' ' + fwdName + '</div>';
+      }
+
+      if (p.reply) {
+        var rAuth = p.reply.author ? tmEsc(p.reply.author) : '';
+        var rText = p.reply.text || '';
+        html += '<div class="tm-post-reply"'
+          + (p.reply.url ? ' onclick="window.open(\'' + tmEscAttr(p.reply.url) + '\', \'_blank\')"' : '')
+          + (p.reply.url ? ' style="cursor:pointer"' : '')
+          + '>';
+        if (rAuth) html += '<div class="tm-post-reply-author">' + rAuth + '</div>';
+        if (rText) html += '<div class="tm-post-reply-text">' + rText + '</div>';
+        html += '</div>';
+      }
+
       if (p.text) html += '<div class="tm-post-text">' + p.text + '</div>';
 
       if (p.media && p.media.length) {
@@ -450,8 +472,9 @@
         + ' onerror="this.parentNode.classList.add(\'tm-photo-failed\')">'
         + '<a class="tm-photo-dl" href="' + tmEscAttr(m.thumb) + '"'
         +   ' download="' + tmEscAttr(fname) + '"'
+        +   ' data-fname="' + tmEscAttr(fname) + '"'
         +   ' title="' + tmEscAttr(tmI18n('download', 'Download')) + '"'
-        +   ' onclick="event.stopPropagation()">⬇</a>'
+        +   ' onclick="return tmDownloadPhoto(this, event)">⬇</a>'
         + '</div>';
     }
     if (m.type === 'video') {
@@ -486,12 +509,79 @@
         + '</div>';
     }
     if (m.type === 'poll') {
-      return '<div class="tm-media-tile"><span class="tm-media-icon">📊</span>'
+      var optionsHtml = '';
+      if (m.options && m.options.length) {
+        optionsHtml = '<ul class="tm-poll-options">';
+        for (var k = 0; k < m.options.length; k++) {
+          optionsHtml += '<li>' + tmEsc(m.options[k]) + '</li>';
+        }
+        optionsHtml += '</ul>';
+      }
+      return '<div class="tm-media-tile tm-media-poll"><span class="tm-media-icon">📊</span>'
         + '<div class="tm-media-meta"><div class="tm-media-title">'
         + tmEsc(m.title || tmI18n('telemirror_poll', 'Poll'))
-        + '</div><div class="tm-media-sub">' + tmEsc(m.subtitle || '') + '</div></div></div>';
+        + '</div><div class="tm-media-sub">' + tmEsc(m.subtitle || '') + '</div>'
+        + optionsHtml
+        + '</div></div>';
     }
     return '';
+  }
+
+  // tmDownloadPhoto fetches the bytes and either hands them to the
+  // Android bridge (saveMedia) or builds a blob-URL <a download> on
+  // desktop. <a download> alone doesn't work on Android WebView for
+  // cross-origin URLs.
+  window.tmDownloadPhoto = function (anchor, ev) {
+    if (ev) ev.stopPropagation();
+    var url = anchor.getAttribute('href');
+    var fname = anchor.getAttribute('data-fname') || 'photo.jpg';
+    var bridge = (typeof window !== 'undefined' && window.Android) ? window.Android : null;
+
+    var doFetch = function () {
+      return fetch(url, { referrerPolicy: 'no-referrer' }).then(function (r) {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.blob();
+      });
+    };
+
+    if (bridge && typeof bridge.saveMedia === 'function') {
+      doFetch().then(function (blob) {
+        return tmBlobToBase64(blob).then(function (b64) {
+          try { bridge.saveMedia(b64, blob.type || 'image/jpeg', fname); }
+          catch (e) { tmFallbackOpen(url); }
+        });
+      }).catch(function () { tmFallbackOpen(url); });
+      return false;
+    }
+
+    doFetch().then(function (blob) {
+      var objectUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = fname;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(objectUrl); a.remove(); }, 100);
+    }).catch(function () { window.location.href = url; });
+    return false;
+  };
+
+  function tmBlobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var s = fr.result || '';
+        var i = s.indexOf(',');
+        resolve(i >= 0 ? s.substring(i + 1) : s);
+      };
+      fr.onerror = function () { reject(fr.error); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  function tmFallbackOpen(url) {
+    try { window.open(url, '_blank'); } catch (e) { window.location.href = url; }
   }
 
   window.tmCopyPost = function (btn) {

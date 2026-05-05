@@ -26,18 +26,31 @@ type Channel struct {
 
 // Media is one attachment on a post.
 type Media struct {
-	Type     string `json:"type"` // "photo" | "video" | "voice" | "audio" | "document" | "sticker" | "poll"
-	URL      string `json:"url,omitempty"`
-	Thumb    string `json:"thumb,omitempty"`
-	Duration string `json:"duration,omitempty"`
-	Title    string `json:"title,omitempty"` // file name / poll question / audio title
-	Subtitle string `json:"subtitle,omitempty"`
+	Type     string   `json:"type"` // photo | video | voice | audio | document | sticker | poll
+	URL      string   `json:"url,omitempty"`
+	Thumb    string   `json:"thumb,omitempty"`
+	Duration string   `json:"duration,omitempty"`
+	Title    string   `json:"title,omitempty"`    // file name / poll question / audio title
+	Subtitle string   `json:"subtitle,omitempty"`
+	Options  []string `json:"options,omitempty"`  // poll options
 }
 
-// Reaction is one emoji + count on a post.
 type Reaction struct {
 	Emoji string `json:"emoji"`
 	Count string `json:"count,omitempty"`
+}
+
+// Reply is the quoted preview shown above a reply.
+type Reply struct {
+	Author string `json:"author,omitempty"`
+	Text   string `json:"text,omitempty"` // inner HTML of the snippet
+	URL    string `json:"url,omitempty"`  // link to the replied-to post
+}
+
+// Forward is the "Forwarded from <name>" header.
+type Forward struct {
+	Author string `json:"author,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 // Post is a single message from the channel feed.
@@ -45,6 +58,8 @@ type Post struct {
 	ID        string     `json:"id"` // "<channel>/<msgid>"
 	Author    string     `json:"author,omitempty"`
 	Text      string     `json:"text,omitempty"` // sanitised inner HTML
+	Reply     *Reply     `json:"reply,omitempty"`
+	Forward   *Forward   `json:"forward,omitempty"`
 	Media     []Media    `json:"media,omitempty"`
 	Reactions []Reaction `json:"reactions,omitempty"`
 	Time      time.Time  `json:"time,omitempty"`

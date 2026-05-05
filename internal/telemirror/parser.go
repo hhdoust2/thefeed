@@ -1,6 +1,7 @@
 package telemirror
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func parseChannelInfo(doc *html.Node) *Channel {
 		}
 	}
 	if descEl := findFirstByClass(doc, "tgme_channel_info_description"); descEl != nil {
-		ch.Description = innerHTML(descEl)
+		ch.Description = rewriteTranslateLinksInHTML(innerHTML(descEl))
 	}
 	if header := findFirstByClass(doc, "tgme_channel_info_header"); header != nil {
 		if img := findFirstByTag(header, "img"); img != nil {
@@ -73,20 +74,28 @@ func parseSinglePost(wrap *html.Node) *Post {
 	if owner := findFirstByClass(msg, "tgme_widget_message_owner_name"); owner != nil {
 		p.Author = textOf(owner)
 	}
-	if textEl := findFirstByClass(msg, "tgme_widget_message_text"); textEl != nil {
-		p.Text = innerHTML(textEl)
+	// The reply preview also has a `.tgme_widget_message_text` (the
+	// quoted snippet) which appears BEFORE the body in the DOM, so
+	// findFirstByClass would grab the wrong one.
+	if textEl := findMessageBodyText(msg); textEl != nil {
+		p.Text = rewriteTranslateLinksInHTML(innerHTML(textEl))
 	}
+
+	p.Reply = parseReply(msg)
+	p.Forward = parseForward(msg)
 
 	visit(msg, func(n *html.Node) bool {
 		switch {
 		case hasClass(n, "tgme_widget_message_photo_wrap"):
+			// Source-post URL → real t.me. Thumb stays on the proxy
+			// (that's how the bytes reach a blocked client).
 			p.Media = append(p.Media, Media{
 				Type:  "photo",
-				URL:   attrOf(n, "href"),
+				URL:   rewriteTranslateLink(attrOf(n, "href")),
 				Thumb: extractBgImage(attrOf(n, "style")),
 			})
 		case hasClass(n, "tgme_widget_message_video_player"):
-			m := Media{Type: "video", URL: attrOf(n, "href")}
+			m := Media{Type: "video", URL: rewriteTranslateLink(attrOf(n, "href"))}
 			if t := findFirstByClass(n, "tgme_widget_message_video_thumb"); t != nil {
 				m.Thumb = extractBgImage(attrOf(t, "style"))
 			}
@@ -138,6 +147,16 @@ func parseSinglePost(wrap *html.Node) *Post {
 			if t := findFirstByClass(n, "tgme_widget_message_poll_type"); t != nil {
 				m.Subtitle = textOf(t)
 			}
+			visit(n, func(opt *html.Node) bool {
+				if hasClass(opt, "tgme_widget_message_poll_option_text") {
+					txt := strings.TrimSpace(textOf(opt))
+					if txt != "" {
+						m.Options = append(m.Options, txt)
+					}
+					return false
+				}
+				return true
+			})
 			p.Media = append(p.Media, m)
 		}
 		return true
@@ -191,6 +210,72 @@ func parseSinglePost(wrap *html.Node) *Post {
 		return nil
 	}
 	return p
+}
+
+// findMessageBodyText: first `.tgme_widget_message_text` not nested
+// inside a `.tgme_widget_message_reply` (which would be the snippet).
+func findMessageBodyText(msg *html.Node) *html.Node {
+	var found *html.Node
+	visit(msg, func(n *html.Node) bool {
+		if found != nil {
+			return false
+		}
+		if !hasClass(n, "tgme_widget_message_text") {
+			return true
+		}
+		for p := n.Parent; p != nil; p = p.Parent {
+			if hasClass(p, "tgme_widget_message_reply") {
+				return false
+			}
+		}
+		found = n
+		return false
+	})
+	return found
+}
+
+// parseReply extracts author + snippet + URL from a reply preview.
+func parseReply(msg *html.Node) *Reply {
+	rNode := findFirstByClass(msg, "tgme_widget_message_reply")
+	if rNode == nil {
+		return nil
+	}
+	r := &Reply{
+		URL: rewriteTranslateLink(attrOf(rNode, "href")),
+	}
+	if a := findFirstByClass(rNode, "tgme_widget_message_author_name"); a != nil {
+		r.Author = textOf(a)
+	}
+	if t := findFirstByClass(rNode, "tgme_widget_message_text"); t != nil {
+		r.Text = rewriteTranslateLinksInHTML(innerHTML(t))
+	}
+	if r.Author == "" && r.Text == "" {
+		return nil
+	}
+	return r
+}
+
+// parseForward extracts the "Forwarded from <name>" header.
+func parseForward(msg *html.Node) *Forward {
+	fNode := findFirstByClass(msg, "tgme_widget_message_forwarded_from")
+	if fNode == nil {
+		return nil
+	}
+	f := &Forward{}
+	if a := findFirstByClass(fNode, "tgme_widget_message_forwarded_from_name"); a != nil {
+		f.Author = textOf(a)
+		f.URL = rewriteTranslateLink(attrOf(a, "href"))
+	} else if a := findFirstByTag(fNode, "a"); a != nil {
+		// Bare <a> without the _name class.
+		f.Author = textOf(a)
+		f.URL = rewriteTranslateLink(attrOf(a, "href"))
+	} else {
+		f.Author = textOf(fNode)
+	}
+	if f.Author == "" {
+		return nil
+	}
+	return f
 }
 
 // ===== DOM helpers =====
@@ -312,4 +397,129 @@ func extractBgImage(style string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// Google Translate proxy URLs come in two forms; we rewrite hrefs
+// back to the originals so links work when Translate is blocked / the
+// site is region-locked. Image src attributes are left alone since
+// the proxy is how those bytes actually reach the user.
+
+const translateHostSuffix = ".translate.goog"
+
+// decodeTranslateHost: '.' ↔ '-', '-' ↔ '--'.
+//
+//	t-me              → t.me
+//	cdn4-telegram-org → cdn4.telegram.org
+//	my--domain-com    → my-domain.com
+func decodeTranslateHost(s string) string {
+	s = strings.ReplaceAll(s, "--", "\x00")
+	s = strings.ReplaceAll(s, "-", ".")
+	s = strings.ReplaceAll(s, "\x00", "-")
+	return s
+}
+
+// rewriteTranslateLink handles two forms:
+//  1. <encoded>.translate.goog/<path>?_x_tr_*=… — inline-proxy form;
+//     decode host, strip tracking params.
+//  2. translate.google.com/website?u=<original> (also /translate) —
+//     wrapper form; pull `u` and recurse once (Google occasionally
+//     double-wraps).
+func rewriteTranslateLink(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+
+	// Form 2.
+	hostLower := strings.ToLower(u.Host)
+	if (hostLower == "translate.google.com" || hostLower == "www.translate.google.com") &&
+		(u.Path == "/website" || u.Path == "/translate") {
+		if orig := u.Query().Get("u"); orig != "" {
+			return rewriteTranslateLink(orig)
+		}
+	}
+
+	// Form 1.
+	if !strings.HasSuffix(hostLower, translateHostSuffix) {
+		return raw
+	}
+	encoded := u.Host[:len(u.Host)-len(translateHostSuffix)]
+	u.Host = decodeTranslateHost(encoded)
+	if q := u.Query(); len(q) > 0 {
+		for k := range q {
+			if strings.HasPrefix(k, "_x_tr_") {
+				q.Del(k)
+			}
+		}
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
+}
+
+// rewriteTranslateLinksInHTML rewrites <a href> in an HTML fragment.
+// <img src> is intentionally left alone (we serve images via the proxy).
+func rewriteTranslateLinksInHTML(htmlStr string) string {
+	if htmlStr == "" || !containsAnyTranslateMarker(htmlStr) {
+		return htmlStr
+	}
+	// Sentinel div so we can locate the fragment in the parsed tree
+	// (html.Parse injects <html><head><body>…).
+	doc, err := html.Parse(strings.NewReader("<div id=\"tm-rewrite-root\">" + htmlStr + "</div>"))
+	if err != nil {
+		return htmlStr
+	}
+	rewriteHrefsInTree(doc)
+	root := findFirstByID(doc, "tm-rewrite-root")
+	if root == nil {
+		return htmlStr
+	}
+	var b strings.Builder
+	for c := root.FirstChild; c != nil; c = c.NextSibling {
+		if err := html.Render(&b, c); err != nil {
+			return htmlStr
+		}
+	}
+	return b.String()
+}
+
+// containsAnyTranslateMarker is a cheap pre-check that catches both
+// the inline-proxy and wrapper forms.
+func containsAnyTranslateMarker(s string) bool {
+	return strings.Contains(s, translateHostSuffix) ||
+		strings.Contains(s, "translate.google.com/")
+}
+
+func rewriteHrefsInTree(n *html.Node) {
+	if n.Type == html.ElementNode && n.Data == "a" {
+		for i, a := range n.Attr {
+			if a.Key == "href" {
+				n.Attr[i].Val = rewriteTranslateLink(a.Val)
+			}
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		rewriteHrefsInTree(c)
+	}
+}
+
+func findFirstByID(root *html.Node, id string) *html.Node {
+	var found *html.Node
+	visit(root, func(n *html.Node) bool {
+		if found != nil {
+			return false
+		}
+		if n.Type == html.ElementNode {
+			for _, a := range n.Attr {
+				if a.Key == "id" && a.Val == id {
+					found = n
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
 }

@@ -313,6 +313,7 @@
     }
 
     .ch-avatar {
+      position: relative;
       width: 44px;
       height: 44px;
       border-radius: 50%;
@@ -323,7 +324,17 @@
       font-size: 17px;
       color: var(--text-dim);
       flex-shrink: 0;
-      font-weight: 600
+      font-weight: 600;
+      overflow: hidden
+    }
+    .ch-avatar-letter { line-height: 1 }
+    /* Overlays the initial-letter span; img.onerror removes it and
+       adds .ch-avatar-noimg so the letter shows through. */
+    .ch-avatar-img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block
     }
 
     .ch-item.active .ch-avatar {
@@ -1310,6 +1321,53 @@
     /* If our image proxy fails, collapse the wrapper so we don't show
        a permanent broken-image icon. */
     .tm-photo-failed { display: none }
+
+    /* Reply quote — clickable, opens source in new tab. */
+    .tm-post-reply {
+      margin: 6px 0 8px;
+      padding: 6px 10px;
+      border-inline-start: 3px solid var(--accent);
+      background: color-mix(in oklab, var(--accent) 6%, transparent);
+      border-radius: 4px;
+      font-size: 12.5px;
+      max-height: 100px; overflow: hidden
+    }
+    .tm-post-reply-author {
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 2px
+    }
+    .tm-post-reply-text {
+      color: var(--text-dim);
+      line-height: 1.4
+    }
+    .tm-post-reply-text br { display: block; margin-bottom: 2px }
+
+    /* "Forwarded from X" header. */
+    .tm-post-forward {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 4px
+    }
+    .tm-post-forward a {
+      color: var(--accent);
+      text-decoration: none
+    }
+    .tm-post-forward a:hover { text-decoration: underline }
+
+    /* Poll options under the question. */
+    .tm-poll-options {
+      list-style: none; padding: 0; margin: 8px 0 0;
+      display: flex; flex-direction: column; gap: 4px
+    }
+    .tm-poll-options li {
+      padding: 4px 8px;
+      background: var(--border);
+      border-radius: 4px;
+      font-size: 12.5px;
+      color: var(--text)
+    }
+    .tm-poll-options li::before { content: "○ "; color: var(--text-dim) }
 
     /* Confirm dialog rendered inside the telemirror modal so it sits
        on top of the drawer / backdrop / posts at the right stacking. */
@@ -3051,6 +3109,20 @@
           <label for="cfgShowScanPrompt" data-i18n="show_scan_prompt">Show scan prompt on startup</label>
         </div>
       </div>
+      <!-- Profile pictures. GitHub path is automatic; toggle opts into DNS. -->
+      <div class="form-group">
+        <div class="row">
+          <input type="checkbox" id="cfgProfilePics" onchange="setProfilePicsEnabled(this.checked)">
+          <label for="cfgProfilePics" data-i18n="profile_pics_enable">Also fetch profile pictures over DNS</label>
+        </div>
+        <div class="row" style="margin-top:4px;font-size:11px;color:var(--text-dim)">
+          <span data-i18n="profile_pics_dns_note">GitHub relay path is always used automatically. This option additionally pulls avatars over DNS when the relay is unavailable.</span>
+        </div>
+        <div class="row" style="margin-top:6px;gap:8px;align-items:center">
+          <button type="button" class="btn btn-flat" id="profilePicsRefreshBtn" onclick="profilePicsRefresh()" data-i18n="profile_pics_refresh">Refresh avatars</button>
+          <span id="profilePicsProgress" style="font-size:11px;color:var(--text-dim)"></span>
+        </div>
+      </div>
       <div class="form-group">
         <label data-i18n="language">Language</label>
         <div class="lang-row">
@@ -3510,10 +3582,18 @@
         telemirror_audio: 'فایل صوتی',
         telemirror_file: 'فایل',
         telemirror_poll: 'نظرسنجی',
+        telemirror_forwarded_from: 'فروارد شده از',
         telemirror_about: 'درباره‌ی این کانال',
         download: 'دانلود',
         copy: 'کپی',
         // END telemirror
+        profile_pics_enable: 'دریافت عکس پروفایل از طریق DNS',
+        profile_pics_dns_note: 'عکس‌هایی که از طریق رله گیتهاب در دسترس باشند به‌صورت خودکار دریافت می‌شوند. این گزینه فقط برای دریافت عکس‌هایی است که رله نمی‌تواند سرویس بدهد و باید از طریق DNS کند گرفته شوند.',
+        profile_pics_refresh: 'به‌روز کردن عکس‌ها',
+        profile_pics_starting: 'در حال شروع...',
+        profile_pics_progress: 'در حال دریافت عکس‌ها: {n}/{m}',
+        profile_pics_done: 'انجام شد ({n} عکس)',
+        profile_pics_failed: 'دریافت ناموفق بود',
         font_size: 'اندازه قلم', debug_mode: 'حالت دیباگ', language: 'زبان',
         next_fetch_info: 'زمان باقی‌مانده تا دریافت بعدی محتوا توسط سرور',
         no_profiles: 'هنوز پروفایلی وجود ندارد', add_profile: '+ پروفایل جدید',
@@ -3743,6 +3823,7 @@
         telemirror_refresh: 'Refresh',
         telemirror_refresh_warn: 'This channel was refreshed {n} sec ago. Refreshing too often can hit a rate limit and stop working for a few minutes. Refresh anyway?',
         telemirror_refresh_yes: 'Refresh',
+        telemirror_forwarded_from: 'Forwarded from',
         telemirror_voice: 'Voice message',
         telemirror_audio: 'Audio',
         telemirror_file: 'File',
@@ -3751,6 +3832,13 @@
         download: 'Download',
         copy: 'Copy',
         // END telemirror
+        profile_pics_enable: 'Also fetch profile pictures over DNS',
+        profile_pics_dns_note: 'Avatars served by the GitHub relay are fetched automatically. Enable this to additionally fall back to DNS for avatars the relay can\'t serve (slower).',
+        profile_pics_refresh: 'Refresh avatars',
+        profile_pics_starting: 'Starting…',
+        profile_pics_progress: 'Refreshing avatars: {n}/{m}',
+        profile_pics_done: 'Done ({n} avatars)',
+        profile_pics_failed: 'Refresh failed',
         font_size: 'Font Size', debug_mode: 'Debug mode', language: 'Language',
         next_fetch_info: 'Time until the server next fetches fresh channel content',
         no_profiles: 'No profiles yet', add_profile: '+ Add Profile',
@@ -4049,6 +4137,9 @@
       loadBgImage();
       connectSSE();
       refreshResolversBadge();
+      // Populate profilePicCache so the channel list renders avatars
+      // without a per-item probe.
+      loadProfilePicState().catch(function () { });
       // Quietly ask GitHub for the latest published client version. Runs in
       // the background so a slow github.com response can't delay startup —
       // if there's an update, the dialog shows up a few seconds later.
@@ -4312,6 +4403,74 @@
       // settings is opened.
       var promptEl = document.getElementById('cfgShowScanPrompt');
       if (promptEl) promptEl.checked = localStorage.getItem('thefeed_scan_prompt_off') !== '1';
+      // Sync the profile-pics toggle from the server (it's persisted in
+      // profiles.json so survives app restarts).
+      fetch('/api/settings').then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
+        if (!s) return;
+        var pp = document.getElementById('cfgProfilePics');
+        if (pp) pp.checked = !!s.profilePicsEnabled;
+      }).catch(function () { });
+    }
+
+    // ===== PROFILE PICTURES =====
+    // Cached lowercase usernames so renderChannels can decide whether
+    // to overlay an <img> over the initial-letter circle.
+    var profilePicCache = { enabled: false, users: {} };
+    var profilePicsPollTimer = null;
+    // SSE throttle state — server fires one event per stored avatar.
+    var profilePicsReloadTimer = null;
+    var profilePicsLastReloadAt = 0;
+
+    function loadProfilePicState() {
+      // no-store so SSE reloads see fresh data, not a cached entry.
+      return fetch('/api/profile-pics', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        if (!d) return;
+        profilePicCache.enabled = !!d.enabled;
+        profilePicCache.users = {};
+        (d.users || []).forEach(function (u) { profilePicCache.users[u.toLowerCase()] = true; });
+        try { renderChannels(); } catch (e) { }
+      }).catch(function () { });
+    }
+
+    function setProfilePicsEnabled(enabled) {
+      // Toggle only controls the DNS path; cached GitHub avatars keep
+      // displaying either way.
+      fetch('/api/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profilePicsEnabled: !!enabled })
+      }).then(function () {
+        profilePicCache.enabled = !!enabled;
+        if (enabled) profilePicsRefresh();
+      }).catch(function () { });
+    }
+
+    function profilePicsRefresh() {
+      var prog = document.getElementById('profilePicsProgress');
+      if (prog) prog.textContent = t('profile_pics_starting') || 'Starting…';
+      fetch('/api/profile-pics/refresh', { method: 'POST' }).then(function (r) {
+        if (!r.ok) {
+          if (prog) prog.textContent = t('profile_pics_failed') || 'Failed';
+          return;
+        }
+        // Poll progress until inactive.
+        if (profilePicsPollTimer) clearInterval(profilePicsPollTimer);
+        profilePicsPollTimer = setInterval(function () {
+          fetch('/api/profile-pics/progress').then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
+            if (!p) return;
+            if (prog) {
+              if (p.active) {
+                var label = (t('profile_pics_progress') || 'Refreshing avatars: {n}/{m}').replace('{n}', p.done || 0).replace('{m}', p.total || 0);
+                prog.textContent = label + (p.username ? '  (@' + p.username + ')' : '');
+              } else {
+                prog.textContent = (t('profile_pics_done') || 'Done').replace('{n}', p.done || 0);
+                clearInterval(profilePicsPollTimer);
+                profilePicsPollTimer = null;
+                loadProfilePicState();
+              }
+            }
+          });
+        }, 800);
+      }).catch(function () { });
     }
 
     // Toggle the "show startup scan prompt" preference. Persists
@@ -5055,6 +5214,25 @@
           }
           return;
         }
+        // Throttle (not debounce): first event fires immediately,
+        // subsequent events at most every 600 ms during a burst.
+        if (data === 'profile-pics') {
+          var THROTTLE_MS = 600;
+          var now = Date.now();
+          var since = now - profilePicsLastReloadAt;
+          if (since >= THROTTLE_MS) {
+            profilePicsLastReloadAt = now;
+            loadProfilePicState().catch(function () { });
+          } else if (!profilePicsReloadTimer) {
+            // Trailing call for the last avatar in the burst.
+            profilePicsReloadTimer = setTimeout(function () {
+              profilePicsReloadTimer = null;
+              profilePicsLastReloadAt = Date.now();
+              loadProfilePicState().catch(function () { });
+            }, THROTTLE_MS - since);
+          }
+          return;
+        }
         // Another tab/device switched the active profile.
         if (data === 'profiles') {
           var prevActive = activeProfileId;
@@ -5676,6 +5854,35 @@
               var key = chNm.replace(/^@/, '').trim();
               autoBtn.classList.toggle('on', autoUpdateChannels.has(key));
             }
+            // Avatar diff against profilePicCache. Without this the
+            // fast path skips avatar updates and SSE-driven reloads
+            // don't reach the UI.
+            var ct2 = channels[ui].ChatType || channels[ui].chatType || 0;
+            var isX2 = ct2 === 2;
+            var bareHandle2 = chNm.replace(/^@/, '').toLowerCase();
+            if (isX2 && bareHandle2.indexOf('x/') === 0) bareHandle2 = bareHandle2.substring(2);
+            var unameKey2 = isX2 ? ('x:' + bareHandle2) : bareHandle2;
+            var avatarEl = existingItems[ui].querySelector('.ch-avatar');
+            if (avatarEl) {
+              var imgEl = avatarEl.querySelector('.ch-avatar-img');
+              var shouldShow = !!profilePicCache.users[unameKey2];
+              if (shouldShow && !imgEl) {
+                var img = document.createElement('img');
+                img.className = 'ch-avatar-img';
+                img.src = '/api/profile-pics/' + encodeURIComponent(unameKey2);
+                img.loading = 'lazy';
+                img.alt = '';
+                img.onerror = function () {
+                  this.parentNode.classList.add('ch-avatar-noimg');
+                  this.remove();
+                };
+                avatarEl.classList.remove('ch-avatar-noimg');
+                avatarEl.insertBefore(img, avatarEl.firstChild);
+              } else if (!shouldShow && imgEl) {
+                imgEl.remove();
+                avatarEl.classList.add('ch-avatar-noimg');
+              }
+            }
           }
           _updateRefreshBadge(); return;
         }
@@ -5706,7 +5913,19 @@
           var chNm2 = e.ch.Name || e.ch.name || '';
           var badge = (channelHasNew(e.ch) && num2 !== selectedChannel) ? '<span class="ch-badge">NEW</span>' : '';
           h += '<div class="ch-item' + active + '" data-name="' + escAttr(handle) + '" data-label="' + escAttr(label) + '" onclick="selectChannel(' + num2 + ')">';
-          h += '<div class="ch-avatar">' + esc(avatarText) + '</div>';
+          // X channels: e.ch.Name is "x/<handle>" (category prefix);
+          // strip before re-attaching the bundle's "x:" prefix.
+          var avatarImg = '';
+          var bareHandle = (chNm2 || avatarName || '').replace(/^@/, '').toLowerCase();
+          if (isX && bareHandle.indexOf('x/') === 0) bareHandle = bareHandle.substring(2);
+          var unameKey = isX ? ('x:' + bareHandle) : bareHandle;
+          if (profilePicCache.users[unameKey]) {
+            avatarImg = '<img class="ch-avatar-img" src="/api/profile-pics/'
+              + encodeURIComponent(unameKey)
+              + '" loading="lazy" alt=""'
+              + ' onerror="this.parentNode.classList.add(\'ch-avatar-noimg\');this.remove()">';
+          }
+          h += '<div class="ch-avatar">' + avatarImg + '<span class="ch-avatar-letter">' + esc(avatarText) + '</span></div>';
           var chSubText = !isX ? (handle.charAt(0) === '@' ? handle : '@' + handle) : '';
           h += '<div class="ch-info"><div class="ch-name">' + formatIranTitleHtml(label) + (isPriv ? '<span class="ch-type-tag">' + t('private') + '</span>' : (isX ? '<span class="ch-type-tag x-tag">' + t('x_label') + '</span>' : '')) + '</div>';
           if (chSubText) h += '<div class="ch-sub">' + esc(chSubText) + '</div>';

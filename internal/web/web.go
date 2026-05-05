@@ -117,6 +117,10 @@ type ProfileList struct {
 	// changes (each launch picks a fresh port → different localStorage
 	// origin → flag was lost on every restart).
 	ScanPromptOff bool `json:"scanPromptOff,omitempty"`
+
+	// ProfilePicsEnabled enables fetching avatars over DNS when the
+	// GitHub relay can't serve them. Off by default.
+	ProfilePicsEnabled bool `json:"profilePicsEnabled,omitempty"`
 }
 
 // lastScanData is the on-disk structure for last_scan.json.
@@ -216,6 +220,9 @@ type Server struct {
 
 	// Optional, removable backup feed (Telegram-via-Translate proxy).
 	telemirror *telemirrorHub
+
+	// Optional per-channel profile pictures cache.
+	profilePics *profilePicsHub
 }
 
 // New creates a new web server.
@@ -253,6 +260,7 @@ func New(dataDir string, port int, host string, password string) (*Server, error
 		dlProgress:     make(map[string]*mediaDLProgress),
 		relayInfo:      newRelayCache(),
 		telemirror:     newTelemirrorHub(dataDir),
+		profilePics:    newProfilePicsHub(dataDir),
 	}
 
 	if mediaCache != nil {
@@ -345,6 +353,11 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/telemirror/channels", s.telemirror.handleChannels)
 	mux.HandleFunc("/api/telemirror/channel/", s.telemirror.handleChannel)
 	mux.HandleFunc("/api/telemirror/img", s.telemirror.handleImg)
+	// Profile-pics cache + control endpoints.
+	mux.HandleFunc("/api/profile-pics/", s.profilePics.handleProfilePic)
+	mux.HandleFunc("/api/profile-pics", s.handleProfilePicsList)
+	mux.HandleFunc("/api/profile-pics/refresh", s.handleProfilePicsRefresh)
+	mux.HandleFunc("/api/profile-pics/progress", s.handleProfilePicsProgress)
 	mux.HandleFunc("/", s.handleIndex)
 
 	// Listen on the specified host (default 127.0.0.1)
@@ -1318,6 +1331,42 @@ func (s *Server) refreshMetadataOnly() {
 	}
 	if needsFetch {
 		go s.ensureTitlesFetched(basectx)
+	}
+
+	go s.maybeRefreshProfilePics(basectx)
+}
+
+// maybeRefreshProfilePics fires a refresh when GitHub relay is up or
+// the user has opted into the DNS path. No-op otherwise; hub coalesces.
+func (s *Server) maybeRefreshProfilePics(parentCtx context.Context) {
+	s.mu.RLock()
+	hub := s.profilePics
+	fetcher := s.fetcher
+	rc := s.relayInfo
+	s.mu.RUnlock()
+	if hub == nil || fetcher == nil {
+		return
+	}
+	dnsAllowed := s.profilePicsEnabled()
+	githubLikelyUp := false
+	if rc != nil {
+		ctx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
+		info, err := rc.get(ctx, fetcher)
+		cancel()
+		if err == nil && info.GitHubRepo != "" {
+			githubLikelyUp = true
+		}
+	}
+	if !dnsAllowed && !githubLikelyUp {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	onStored := func(string) {
+		s.broadcast("event: update\ndata: \"profile-pics\"\n\n")
+	}
+	if err := hub.refresh(ctx, fetcher, dnsAllowed, s.fetchFromGitHubRelayBytes, onStored); err == nil {
+		s.broadcast("event: update\ndata: \"profile-pics\"\n\n")
 	}
 }
 
@@ -2758,16 +2807,26 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if pl == nil {
 			pl = &ProfileList{}
 		}
-		writeJSON(w, map[string]any{"fontSize": pl.FontSize, "debug": pl.Debug, "theme": pl.Theme, "lang": pl.Lang, "scanPromptOff": pl.ScanPromptOff, "version": version.Version, "commit": version.Commit})
+		writeJSON(w, map[string]any{
+			"fontSize":           pl.FontSize,
+			"debug":              pl.Debug,
+			"theme":              pl.Theme,
+			"lang":               pl.Lang,
+			"scanPromptOff":      pl.ScanPromptOff,
+			"profilePicsEnabled": pl.ProfilePicsEnabled,
+			"version":            version.Version,
+			"commit":             version.Commit,
+		})
 
 	case http.MethodPost:
 		// Optional pointers so partial requests don't reset other fields.
 		var req struct {
-			FontSize      *int    `json:"fontSize"`
-			Debug         *bool   `json:"debug"`
-			Theme         *string `json:"theme"`
-			Lang          *string `json:"lang"`
-			ScanPromptOff *bool   `json:"scanPromptOff"`
+			FontSize           *int    `json:"fontSize"`
+			Debug              *bool   `json:"debug"`
+			Theme              *string `json:"theme"`
+			Lang               *string `json:"lang"`
+			ScanPromptOff      *bool   `json:"scanPromptOff"`
+			ProfilePicsEnabled *bool   `json:"profilePicsEnabled"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", 400)
@@ -2804,6 +2863,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ScanPromptOff != nil {
 			pl.ScanPromptOff = *req.ScanPromptOff
+		}
+		if req.ProfilePicsEnabled != nil {
+			pl.ProfilePicsEnabled = *req.ProfilePicsEnabled
 		}
 		if err := s.saveProfiles(pl); err != nil {
 			http.Error(w, fmt.Sprintf("save: %v", err), 500)
@@ -3584,6 +3646,9 @@ func (s *Server) handleClearCache(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.telemirror != nil {
 		s.telemirror.ClearCache()
+	}
+	if s.profilePics != nil {
+		s.profilePics.Clear()
 	}
 	mediaDeleted := 0
 	if s.mediaCache != nil {
