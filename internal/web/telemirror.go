@@ -23,16 +23,19 @@ type telemirrorHub struct {
 	client *telemirror.Client
 	cache  *telemirror.Cache
 	store  *telemirror.Store
+	imgs   *telemirror.ImageCache
 
 	mu         sync.Mutex
 	refreshing map[string]chan struct{}
 }
 
 func newTelemirrorHub(dataDir string) *telemirrorHub {
+	tmDir := filepath.Join(dataDir, "telemirror")
 	return &telemirrorHub{
 		client:     telemirror.NewClient(),
-		cache:      telemirror.NewCache(filepath.Join(dataDir, "telemirror")),
+		cache:      telemirror.NewCache(tmDir),
 		store:      telemirror.NewStore(dataDir),
+		imgs:       telemirror.NewImageCache(filepath.Join(tmDir, "images")),
 		refreshing: make(map[string]chan struct{}),
 	}
 }
@@ -119,22 +122,23 @@ func (h *telemirrorHub) handleChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rewriteImageURLs(res))
 }
 
-// rewriteImageURLs returns a copy of the result with image URLs pointed
-// at our /api/telemirror/img proxy. Only the bytes-bearing fields are
-// rewritten (Channel.Photo, Media.Thumb). Media.URL is the POST
-// permalink — rewriting it as an image was the "weird URL" bug:
-// clicking a photo fetched the post HTML through the image proxy.
+// rewriteImageURLs points Channel.Photo at /api/telemirror/avatar/<username>
+// (stable across restarts) and Media.Thumb at the URL-hash img proxy.
+// Media.URL is left alone — it's a post permalink, not image bytes.
 func rewriteImageURLs(in *telemirror.FetchResult) *telemirror.FetchResult {
 	if in == nil {
 		return nil
 	}
 	cp := *in
-	cp.Channel.Photo = proxyImgURL(cp.Channel.Photo)
+	if u := telemirror.SanitizeUsername(cp.Channel.Username); u != "" {
+		cp.Channel.Photo = "/api/telemirror/avatar/" + strings.ToLower(u)
+	} else {
+		cp.Channel.Photo = proxyImgURL(cp.Channel.Photo)
+	}
 	cp.Posts = make([]telemirror.Post, len(in.Posts))
 	for i, p := range in.Posts {
 		p.Media = append([]telemirror.Media(nil), p.Media...)
 		for j := range p.Media {
-			// Leave Media.URL alone (it's a permalink, not bytes).
 			p.Media[j].Thumb = proxyImgURL(p.Media[j].Thumb)
 		}
 		cp.Posts[i] = p
@@ -203,8 +207,8 @@ func isProxiableHost(rawURL string) bool {
 	return strings.HasSuffix(host, ".translate.goog")
 }
 
-// handleImg proxies a single image (or other binary) URL through the
-// same fronting path used for the channel widget.
+// handleImg proxies an image URL through fronting, persisting the
+// response under sha256(u) for subsequent hits.
 func (h *telemirrorHub) handleImg(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", 405)
@@ -219,6 +223,10 @@ func (h *telemirrorHub) handleImg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host not allowed", 400)
 		return
 	}
+	if body, ctype, ok := h.imgs.Get(raw); ok {
+		writeTelemirrorImg(w, body, ctype)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	body, ctype, err := h.client.FetchURL(ctx, raw)
@@ -226,15 +234,20 @@ func (h *telemirrorHub) handleImg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 502)
 		return
 	}
-	// If the upstream returned HTML or some non-image content (a Google
-	// error page, captcha, etc.), surface a 502 instead of relaying it.
-	// The browser fires onerror reliably on a 502, so the avatar / image
-	// fallback in the JS kicks in cleanly.
+	// Reject HTML/error pages so the browser's onerror fires cleanly.
 	low := strings.ToLower(ctype)
 	if !strings.HasPrefix(low, "image/") && !strings.HasPrefix(low, "video/") && !strings.HasPrefix(low, "audio/") && low != "" {
 		http.Error(w, "upstream not an image: "+ctype, 502)
 		return
 	}
+	if ctype == "" {
+		ctype = "application/octet-stream"
+	}
+	_ = h.imgs.Put(raw, ctype, body)
+	writeTelemirrorImg(w, body, ctype)
+}
+
+func writeTelemirrorImg(w http.ResponseWriter, body []byte, ctype string) {
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
@@ -293,7 +306,88 @@ func (h *telemirrorHub) refresh(username string) (*telemirror.FetchResult, error
 	}
 	res := &telemirror.FetchResult{Channel: *chInfo, Posts: posts}
 	_ = h.cache.Put(username, res)
+	go h.ensureAvatarCached(chInfo.Username, chInfo.Photo)
 	return res, nil
 }
 
-func (h *telemirrorHub) ClearCache() { h.cache.Clear() }
+// ensureAvatarCached downloads and persists the avatar under username
+// only when no entry is on disk yet.
+func (h *telemirrorHub) ensureAvatarCached(username, photoURL string) {
+	username = strings.ToLower(telemirror.SanitizeUsername(username))
+	if username == "" || photoURL == "" {
+		return
+	}
+	if _, _, ok := h.imgs.GetByKey(username); ok {
+		return
+	}
+	proxyURL := translateGoogify(photoURL)
+	if proxyURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	body, ctype, err := h.client.FetchURL(ctx, proxyURL)
+	if err != nil {
+		return
+	}
+	low := strings.ToLower(ctype)
+	if !strings.HasPrefix(low, "image/") && low != "" {
+		return
+	}
+	if ctype == "" {
+		ctype = "image/jpeg"
+	}
+	_ = h.imgs.PutByKey(username, ctype, body)
+}
+
+// handleAvatar serves /api/telemirror/avatar/<username> from disk;
+// on miss, recovers the URL from the cached channel JSON, fetches,
+// persists, and serves.
+func (h *telemirrorHub) handleAvatar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	username := strings.ToLower(telemirror.SanitizeUsername(
+		strings.TrimPrefix(r.URL.Path, "/api/telemirror/avatar/")))
+	if username == "" {
+		http.Error(w, "missing username", 400)
+		return
+	}
+	if body, ctype, ok := h.imgs.GetByKey(username); ok {
+		writeTelemirrorImg(w, body, ctype)
+		return
+	}
+	cached, _ := h.cache.Get(username)
+	if cached == nil || cached.Channel.Photo == "" {
+		http.Error(w, "no cached avatar", 404)
+		return
+	}
+	proxyURL := translateGoogify(cached.Channel.Photo)
+	if proxyURL == "" {
+		http.Error(w, "no cached avatar", 404)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	body, ctype, err := h.client.FetchURL(ctx, proxyURL)
+	if err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	low := strings.ToLower(ctype)
+	if !strings.HasPrefix(low, "image/") && low != "" {
+		http.Error(w, "upstream not an image: "+ctype, 502)
+		return
+	}
+	if ctype == "" {
+		ctype = "image/jpeg"
+	}
+	_ = h.imgs.PutByKey(username, ctype, body)
+	writeTelemirrorImg(w, body, ctype)
+}
+
+func (h *telemirrorHub) ClearCache() {
+	h.cache.Clear()
+	h.imgs.Clear()
+}

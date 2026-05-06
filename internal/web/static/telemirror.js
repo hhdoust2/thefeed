@@ -4,26 +4,15 @@
 (function () {
   var tmChannels = [];
   var tmActive = '';
-  var tmAvatarCache = {}; // username (lower) -> photo URL once we've fetched it
   var tmPostText = {};    // pid -> plaintext (avoids huge data-text attrs)
   var tmLastFetchedAt = {}; // username (lower) -> last successful fetch ms
 
-  // ===== persisted state =====
-  // Restore the previously-active channel and any avatar URLs we've
-  // resolved before, so reopening the app lands the user back on the
-  // same channel (with sidebar avatars already populated) instead of
-  // the first-hint and blank initial-letter circles.
   try {
     tmActive = localStorage.getItem('tm_active') || '';
-    var avRaw = localStorage.getItem('tm_avatars');
-    if (avRaw) tmAvatarCache = JSON.parse(avRaw) || {};
-  } catch (e) { /* localStorage may be disabled / quota; that's fine */ }
+  } catch (e) { }
 
   function tmSaveActive() {
     try { localStorage.setItem('tm_active', tmActive || ''); } catch (e) { }
-  }
-  function tmSaveAvatars() {
-    try { localStorage.setItem('tm_avatars', JSON.stringify(tmAvatarCache)); } catch (e) { }
   }
 
   function tmI18n(key, fallback) {
@@ -68,13 +57,12 @@
     var initial = '<span class="tm-avatar-initial">' + tmEsc(tmInitial(disp)) + '</span>';
     var bg = tmAvatarColor(disp || '?');
     var key = (username || '').toLowerCase();
-    var photo = tmAvatarCache[key];
     var inner = initial;
-    if (photo) {
-      // onerror also purges the cache entry — without that, every
-      // render loops on the same broken URL until the user picks the
-      // channel again and tmSelect overwrites it.
-      inner = '<img src="' + tmEscAttr(photo) + '" loading="lazy" alt=""'
+    if (key) {
+      // Always request the stable server URL. Server returns 404 if no
+      // avatar is cached — onerror then falls back to the initial.
+      var src = '/api/telemirror/avatar/' + encodeURIComponent(key);
+      inner = '<img src="' + tmEscAttr(src) + '" loading="lazy" alt=""'
         + ' onerror="tmAvatarLoadFailed(this, \'' + tmEscAttr(key) + '\')">'
         + initial;
     }
@@ -82,13 +70,7 @@
       + inner + '</div>';
   }
 
-  // tmAvatarLoadFailed: drop the stale URL, swap the parent into
-  // initial-letter mode, and remove the broken <img>.
   window.tmAvatarLoadFailed = function (img, key) {
-    if (key && tmAvatarCache[key]) {
-      delete tmAvatarCache[key];
-      tmSaveAvatars();
-    }
     if (img && img.parentNode) {
       img.parentNode.classList.add('tm-avatar-fallback');
       img.remove();
@@ -248,11 +230,6 @@
       }
       var d = await r.json();
       tmLastFetchedAt[username.toLowerCase()] = Date.now();
-      if (d && d.channel && d.channel.photo) {
-        tmAvatarCache[username.toLowerCase()] = d.channel.photo;
-        tmSaveAvatars();
-        tmRenderChannels();
-      }
       tmSaveActive();
       tmRenderTopbar(d && d.channel, username);
       tmRenderPosts(d);
@@ -660,9 +637,6 @@
         tmActive = '';
         tmSaveActive();
       }
-      // Drop the avatar cache entry too so a re-add fetches fresh.
-      delete tmAvatarCache[username.toLowerCase()];
-      tmSaveAvatars();
       await tmLoadChannels();
     } catch (e) { tmToast((e && e.message) || 'failed'); }
   };

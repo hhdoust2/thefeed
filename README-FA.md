@@ -351,7 +351,7 @@ chmod +x thefeed-client
 
 ### اندروید (نسخه APK)
 
-از صفحه‌ی [Releases](https://github.com/sartoopjj/thefeed/releases) فایل APK مناسب گوشی خود را دانلود کنید:
+از صفحه‌ی [Releases](https://github.com/sartoopjj/thefeed/releases) فایل APK مناسب گوشی خود را دانلود کنید (نیازمند اندروید ۷ یا بالاتر):
 
 - `thefeed-android-<version>-arm64-v8a.apk` — برای گوشی‌های ۶۴ بیتی (تقریباً همه‌ی گوشی‌های جدید از سال ۱۳۹۶ به بعد). **این گزینه برای اکثر کاربران درست است.**
 - `thefeed-android-<version>-armeabi-v7a.apk` — فقط برای گوشی‌های قدیمی ۳۲ بیتی.

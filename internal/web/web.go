@@ -353,6 +353,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/telemirror/channels", s.telemirror.handleChannels)
 	mux.HandleFunc("/api/telemirror/channel/", s.telemirror.handleChannel)
 	mux.HandleFunc("/api/telemirror/img", s.telemirror.handleImg)
+	mux.HandleFunc("/api/telemirror/avatar/", s.telemirror.handleAvatar)
 	// Profile-pics cache + control endpoints.
 	mux.HandleFunc("/api/profile-pics/", s.profilePics.handleProfilePic)
 	mux.HandleFunc("/api/profile-pics", s.handleProfilePicsList)
