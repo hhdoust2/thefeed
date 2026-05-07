@@ -231,7 +231,6 @@
 				E1000000000000000000E003 /* WebView.swift in Sources */,
 				E1000000000000000000E004 /* Bridge.swift in Sources */,
 				E1000000000000000000E005 /* ServerController.swift in Sources */,
-				E1000000000000000000E011 /* LanguagePicker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
