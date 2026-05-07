@@ -40,6 +40,112 @@
     return ch ? ch.toUpperCase() : '?';
   }
 
+  // Scroll the active channel view to the latest (bottom) post.
+  window.tmScrollToBottom = function () {
+    var el = document.getElementById('tmContent');
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // Bind once on first open: toggle the scroll-down button when the
+  // user is more than ~150px away from the bottom of the post list.
+  function tmInitScrollBtn() {
+    var sc = document.getElementById('tmContent');
+    var btn = document.getElementById('tmScrollDownBtn');
+    if (!sc || !btn || sc._tmScrollBtnBound) return;
+    sc._tmScrollBtnBound = true;
+    sc.addEventListener('scroll', function () {
+      var atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 150;
+      btn.classList.toggle('visible', !atBottom);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', tmInitScrollBtn, { once: true });
+
+  // Fetch a page of older posts and prepend them above the current
+  // ones. Calls /api/telemirror/older/<user>?before=<id> which always
+  // hits upstream (not cached — pagination data otherwise grows
+  // unbounded per channel).
+  window.tmLoadOlder = function (beforeId, btn) {
+    if (!tmActive || !beforeId) return;
+    var origLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = tmI18n('loading', 'Loading...'); }
+
+    // Anchor by scrollHeight delta. Prepending content makes the
+    // scrollHeight grow by P; we keep the same viewport content visible
+    // by setting scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight).
+    var scroller = document.getElementById('tmContent');
+    var oldHeight = scroller ? scroller.scrollHeight : 0;
+    var oldTop = scroller ? scroller.scrollTop : 0;
+
+    fetch('/api/telemirror/older/' + encodeURIComponent(tmActive) + '?before=' + encodeURIComponent(beforeId))
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (older) {
+        if (!older || !older.posts || !older.posts.length) {
+          if (btn) { btn.textContent = tmI18n('telemirror_no_older', 'No older posts'); }
+          return;
+        }
+        var merged = older.posts.concat(window._tmCurrentPosts || []);
+        var seen = {}, out = [];
+        for (var i = 0; i < merged.length; i++) {
+          var id = merged[i].id;
+          if (id && seen[id]) continue;
+          if (id) seen[id] = true;
+          out.push(merged[i]);
+        }
+        tmRenderPosts({ channel: window._tmCurrentChannel, posts: out });
+        if (!scroller) return;
+        // Restore on next frame so layout has flushed. Then re-correct
+        // once more after images load — they grow the prepended block
+        // and would otherwise push the anchor down.
+        var fix = function () {
+          scroller.scrollTop = oldTop + (scroller.scrollHeight - oldHeight);
+        };
+        requestAnimationFrame(function () {
+          fix();
+          var imgs = scroller.querySelectorAll('img');
+          var pending = 0;
+          for (var k = 0; k < imgs.length; k++) {
+            if (!imgs[k].complete) {
+              pending++;
+              imgs[k].addEventListener('load', function () { fix(); }, { once: true });
+              imgs[k].addEventListener('error', function () { fix(); }, { once: true });
+            }
+          }
+        });
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+        tmToast(tmI18n('telemirror_load_older_failed', 'Failed to load older posts'));
+      });
+  };
+
+  // Fullscreen image overlay. Tap anywhere or the X button to close.
+  // Tapping the image itself doesn't close (avoids accidents on iOS
+  // double-tap zoom).
+  window.tmOpenLightbox = function (src) {
+    var existing = document.getElementById('tmLightbox');
+    if (existing) existing.remove();
+    var d = document.createElement('div');
+    d.id = 'tmLightbox';
+    d.innerHTML =
+      '<button class="tm-lightbox-close" type="button" aria-label="Close">×</button>' +
+      '<img src="' + tmEscAttr(src) + '" referrerpolicy="no-referrer" alt="">';
+    var close = function () { d.remove(); };
+    d.addEventListener('click', function (e) {
+      if (e.target === d || e.target.classList.contains('tm-lightbox-close')) close();
+    });
+    document.body.appendChild(d);
+  };
+
+  // Telegram wraps every emoji in <i class="emoji" style="background-image:url(...)"><b>X</b></i>
+  // so it can render its own sprite. Outside Telegram's CSS the sprite
+  // never loads but the inline-styled box stays — leaving a visible
+  // background patch around each glyph. Strip the wrapper; the device
+  // renders the inner character natively.
+  function tmStripEmojiSprites(html) {
+    if (!html) return html;
+    return String(html).replace(/<i\s+class="emoji"[^>]*>([\s\S]*?)<\/i>/g, '$1');
+  }
+
   // Deterministic colour-from-name so the placeholder avatars don't all
   // look identical. Mirrors what Telegram's web client does.
   function tmAvatarColor(name) {
@@ -239,6 +345,24 @@
   }
   window.tmSelect = tmSelect;
 
+  // Server-driven update — called from the main SSE handler when the
+  // backend finishes a background telemirror refresh. If the updated
+  // channel is the one currently open, silently re-fetch so the user
+  // sees the new posts without manually refreshing.
+  window.tmOnServerUpdate = function (username) {
+    if (!tmActive || !username) return;
+    if (tmActive.toLowerCase() !== username.toLowerCase()) return;
+    fetch('/api/telemirror/channel/' + encodeURIComponent(username))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        tmLastFetchedAt[username.toLowerCase()] = Date.now();
+        tmRenderTopbar(d && d.channel, username);
+        tmRenderPosts(d);
+      })
+      .catch(function () { });
+  };
+
   // Refresh: warns if the last successful fetch was within 10 min,
   // since hammering Translate trips Google's per-IP rate limit.
   window.tmRefreshActive = async function () {
@@ -310,6 +434,10 @@
     var content = document.getElementById('tmContent');
     var posts = (data && data.posts) || [];
     var ch = (data && data.channel) || {};
+    // Stash for tmLoadOlder so it can merge older posts into the same
+    // view without a full re-fetch of the active channel.
+    window._tmCurrentPosts = posts;
+    window._tmCurrentChannel = ch;
     if (!posts.length) {
       content.innerHTML = '<div class="tm-empty">' + tmEsc(tmI18n('telemirror_no_posts', 'No posts')) + '</div>';
       return;
@@ -327,6 +455,16 @@
         +   '<div class="tm-channel-bio-body">' + ch.description + '</div>'
         + '</div>';
     }
+    // Load-older button if we have at least one post — anchored to the
+    // smallest message id so each click steps back through history.
+    var oldestId = (posts[0] && posts[0].id || '').split('/').pop();
+    if (oldestId) {
+      html += '<div class="tm-load-older-row">'
+        +   '<button class="tm-load-older" onclick="tmLoadOlder(\'' + tmEscAttr(oldestId) + '\', this)">'
+        +     tmEsc(tmI18n('telemirror_load_older', 'Load older posts'))
+        +   '</button>'
+        + '</div>';
+    }
     // Stash plain text for each post in a JS map keyed by id, so the
     // copy button doesn't have to embed huge multiline strings into a
     // data-text attribute (which broke rendering on long Persian posts).
@@ -341,9 +479,12 @@
 
       html += '<div class="tm-post" data-pid="' + pid + '">';
 
-      // Head: author + edited + copy button. Time moved to the bottom.
+      // Head: author + msg id + edited + copy button. Time at the bottom.
       html += '<div class="tm-post-head">';
       if (ch.title) html += '<span class="tm-post-author">' + tmEsc(ch.title) + '</span>';
+      // p.id looks like "channel/12345" — show only the numeric part.
+      var msgNum = (p.id || '').split('/').pop();
+      if (msgNum) html += '<span class="tm-post-msgid">#' + tmEsc(msgNum) + '</span>';
       if (p.edited) html += '<span class="tm-post-edited">' + tmEsc(tmI18n('telemirror_edited', 'edited')) + '</span>';
       if (plain) {
         html += '<button class="tm-post-copy"'
@@ -371,11 +512,11 @@
           + (p.reply.url ? ' style="cursor:pointer"' : '')
           + '>';
         if (rAuth) html += '<div class="tm-post-reply-author">' + rAuth + '</div>';
-        if (rText) html += '<div class="tm-post-reply-text">' + rText + '</div>';
+        if (rText) html += '<div class="tm-post-reply-text">' + tmStripEmojiSprites(rText) + '</div>';
         html += '</div>';
       }
 
-      if (p.text) html += '<div class="tm-post-text">' + p.text + '</div>';
+      if (p.text) html += '<div class="tm-post-text">' + tmStripEmojiSprites(p.text) + '</div>';
 
       if (p.media && p.media.length) {
         var photoCount = 0;
@@ -462,12 +603,14 @@
       return '<div class="tm-photo">'
         + '<img src="' + tmEscAttr(m.thumb) + '" loading="lazy" alt=""'
         + ' referrerpolicy="no-referrer"'
+        + ' onclick="tmOpenLightbox(\'' + tmEscAttr(m.thumb) + '\')"'
+        + ' style="cursor:zoom-in"'
         + ' onerror="this.parentNode.classList.add(\'tm-photo-failed\')">'
         + '<a class="tm-photo-dl" href="' + tmEscAttr(m.thumb) + '"'
         +   ' download="' + tmEscAttr(fname) + '"'
         +   ' data-fname="' + tmEscAttr(fname) + '"'
         +   ' title="' + tmEscAttr(tmI18n('download', 'Download')) + '"'
-        +   ' onclick="return tmDownloadPhoto(this, event)">⬇</a>'
+        +   ' onclick="event.stopPropagation();return tmDownloadPhoto(this, event)">⬇</a>'
         + '</div>';
     }
     if (m.type === 'video') {

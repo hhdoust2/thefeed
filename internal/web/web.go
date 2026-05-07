@@ -260,9 +260,14 @@ func New(dataDir string, port int, host string, password string) (*Server, error
 		mediaCache:     mediaCache,
 		dlProgress:     make(map[string]*mediaDLProgress),
 		relayInfo:      newRelayCache(),
-		telemirror:     newTelemirrorHub(dataDir),
-		profilePics:    newProfilePicsHub(dataDir),
+		profilePics: newProfilePicsHub(dataDir),
 	}
+	// Set up telemirror with an onUpdate hook so background refreshes
+	// push an SSE event; the frontend re-fetches the active channel
+	// when it sees the matching event.
+	s.telemirror = newTelemirrorHub(dataDir, func(username string) {
+		s.broadcast("event: update\ndata: \"telemirror:" + username + "\"\n\n")
+	})
 
 	if mediaCache != nil {
 		go mediaCache.Cleanup()
@@ -362,6 +367,7 @@ func (s *Server) serve(ln net.Listener) error {
 	mux.HandleFunc("/api/telemirror/channel/", s.telemirror.handleChannel)
 	mux.HandleFunc("/api/telemirror/img", s.telemirror.handleImg)
 	mux.HandleFunc("/api/telemirror/avatar/", s.telemirror.handleAvatar)
+	mux.HandleFunc("/api/telemirror/older/", s.telemirror.handleOlder)
 	// Profile-pics cache + control endpoints.
 	mux.HandleFunc("/api/profile-pics/", s.profilePics.handleProfilePic)
 	mux.HandleFunc("/api/profile-pics", s.handleProfilePicsList)

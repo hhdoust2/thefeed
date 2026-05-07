@@ -586,6 +586,29 @@
       direction: ltr
     }
 
+    .floating-date {
+      /* Sit just below the chat-header (~54px tall). */
+      position: absolute;
+      top: 64px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: color-mix(in oklab, var(--bg-elevated, var(--bg)) 75%, transparent);
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 500;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      white-space: nowrap;
+    }
+    .floating-date.visible { opacity: 0.92; }
+
     .msg-date-sep {
       text-align: center;
       padding: 8px 0;
@@ -1156,13 +1179,90 @@
       border-bottom: 1px dashed var(--border)
     }
     .tm-post-author { font-weight: 700; color: var(--accent) }
+    #tmLightbox {
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(0,0,0,.92);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      cursor: zoom-out;
+    }
+    #tmLightbox img {
+      max-width: 100%; max-height: 100%;
+      object-fit: contain;
+      box-shadow: 0 4px 30px rgba(0,0,0,.5);
+      cursor: default;
+    }
+    .tm-lightbox-close {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      inset-inline-end: 16px;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      font-size: 26px; line-height: 1;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(6px);
+    }
+    .tm-lightbox-close:hover { background: rgba(255,255,255,.28); }
+    .tm-scroll-down {
+      position: absolute;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      inset-inline-end: 16px;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface2, var(--bg-elevated, var(--bg)));
+      color: var(--text);
+      font-size: 18px;
+      display: none;
+      align-items: center; justify-content: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4);
+      z-index: 10;
+      cursor: pointer;
+    }
+    .tm-scroll-down.visible { display: flex; }
+    .tm-scroll-down:hover {
+      background: color-mix(in oklab, var(--accent) 12%, var(--surface2, var(--bg)));
+    }
+    .tm-load-older-row {
+      display: flex; justify-content: center;
+      margin: 8px 0 14px;
+    }
+    .tm-load-older {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 16px;
+      border-radius: 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .tm-load-older:hover {
+      background: color-mix(in oklab, var(--accent) 10%, transparent);
+      border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+    }
+    .tm-load-older:disabled { opacity: .6; cursor: default; }
+    .tm-post-msgid {
+      font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text-dim); padding: 1px 5px; border-radius: 4px;
+      background: color-mix(in oklab, var(--text-dim) 12%, transparent);
+      user-select: text
+    }
     .tm-post-time { opacity: .85 }
     .tm-post-edited {
       font-size: 10px; padding: 1px 6px; border-radius: 4px;
       background: var(--border); color: var(--text-dim)
     }
     .tm-post-text {
-      font-size: 14px; line-height: 1.7;
+      /* Inherit from --font-size (set by the global Settings slider) and
+         add a small bump so telemirror posts read at the same scale as
+         main-feed messages. */
+      font-size: calc(var(--font-size) + 1px);
+      line-height: 1.7;
       overflow-wrap: anywhere;          /* break long URLs / unbroken strings */
       word-break: break-word
     }
@@ -3065,6 +3165,7 @@
           <button class="btn btn-primary" onclick="openProfiles()" data-i18n="set_up">Set Up</button>
         </div>
       </div>
+      <div class="floating-date" id="floatingDate" dir="auto" hidden></div>
       <div class="send-panel" id="sendPanel">
         <input class="send-input" id="sendInput" data-i18n-ph="write_message" placeholder="Write a message..."
           maxlength="4000">
@@ -3108,6 +3209,7 @@
       <main id="tmContent" class="tm-content">
         <div class="tm-empty" data-i18n="telemirror_pick_channel">Pick a channel</div>
       </main>
+      <button class="tm-scroll-down" id="tmScrollDownBtn" onclick="tmScrollToBottom()" aria-label="Scroll to latest" title="Scroll to latest">&#8595;</button>
     </div>
   </div>
   <!-- END telemirror -->
@@ -3763,6 +3865,9 @@
         scanner_load_presets: 'بارگذاری لیست پیش‌فرض',
         scanner_preset_active: 'ریزالورهای پیش‌فرض بارگذاری شد',
         privacy_policy: 'حریم خصوصی',
+        telemirror_load_older: 'بارگذاری پیام‌های قدیمی‌تر',
+        telemirror_no_older: 'پیام قدیمی‌تری وجود ندارد',
+        telemirror_load_older_failed: 'خطا در بارگذاری پیام‌های قدیمی',
         scanner_from_input: 'از ورودی',
         scanner_from_preset: 'از پیش‌فرض',
         scanner_new_scan: 'اسکن جدید',
@@ -4009,6 +4114,9 @@
         scanner_load_presets: 'Load Presets',
         scanner_preset_active: 'Default resolvers loaded',
         privacy_policy: 'Privacy',
+        telemirror_load_older: 'Load older posts',
+        telemirror_no_older: 'No older posts',
+        telemirror_load_older_failed: 'Failed to load older posts',
         scanner_from_input: 'from input',
         scanner_from_preset: 'from preset',
         scanner_new_scan: 'New Scan',
@@ -5284,6 +5392,14 @@
         // populated from a bank scan, or user-triggered rescan
         // overwrote them). Refresh the tab strip so the count
         // badge stops showing 0 while resolvers are actually live.
+        // Server finished a background telemirror refresh for this
+        // channel — let telemirror.js re-fetch if it's the active one.
+        if (typeof data === 'string' && data.indexOf('telemirror:') === 0) {
+          if (typeof window.tmOnServerUpdate === 'function') {
+            try { window.tmOnServerUpdate(data.slice('telemirror:'.length)); } catch (e2) { }
+          }
+          return;
+        }
         if (data === 'resolver-lists') {
           if (document.getElementById('resolversModal').classList.contains('active')) {
             try { loadResolverLists(); } catch (e2) { }
@@ -7925,15 +8041,46 @@
       navigator.clipboard.writeText(text).then(function () { showToast(t('msg_copied')) }).catch(function () { });
     }
 
-    // ===== SCROLL TO BOTTOM =====
+    // ===== SCROLL TO BOTTOM + FLOATING DATE =====
     (function () {
-      var messagesEl = null;
+      var messagesEl = null, dateEl = null, hideTimer = null;
+      function topMostDate() {
+        if (!messagesEl) return '';
+        var seps = messagesEl.querySelectorAll('.msg-date-sep');
+        if (!seps.length) return '';
+        var top = messagesEl.getBoundingClientRect().top;
+        var current = '';
+        for (var i = 0; i < seps.length; i++) {
+          var r = seps[i].getBoundingClientRect();
+          // The most recent separator at or above the viewport's top
+          // edge is the date the user is currently reading under.
+          if (r.top - top <= 8) current = seps[i].textContent;
+          else break;
+        }
+        return current.trim();
+      }
+      function showFloatingDate() {
+        if (!dateEl) return;
+        var s = topMostDate();
+        if (!s) { dateEl.classList.remove('visible'); dateEl.hidden = true; return; }
+        dateEl.textContent = s;
+        // Force RTL for Persian/Arabic content so the day-month-year
+        // sequence reads right-to-left as expected (16 اردیبهشت 1405,
+        // not 1405 اردیبهشت 16).
+        dateEl.dir = /[؀-ۿ]/.test(s) ? 'rtl' : 'ltr';
+        dateEl.hidden = false;
+        dateEl.classList.add('visible');
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () { dateEl.classList.remove('visible'); }, 1200);
+      }
       function initScrollBtn() {
         messagesEl = document.getElementById('messages');
+        dateEl = document.getElementById('floatingDate');
         if (!messagesEl) return;
         messagesEl.addEventListener('scroll', function () {
           var atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 150;
           document.getElementById('scrollDownBtn').classList.toggle('visible', !atBottom);
+          showFloatingDate();
         });
       }
       // Init after DOM is ready
