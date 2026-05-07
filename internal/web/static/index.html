@@ -202,12 +202,12 @@
     }
 
     .sidebar-search {
-      padding: 7px 12px;
+      padding: 5px 10px;
       border: none;
-      border-radius: 18px;
+      border-radius: 14px;
       background: var(--surface);
       color: var(--text);
-      font-size: 13px;
+      font-size: 12px;
       outline: none;
       width: 100%
     }
@@ -959,7 +959,11 @@
       background: var(--bg);
       display: none;
       flex-direction: column;
-      color: var(--text)
+      color: var(--text);
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bottom);
+      padding-left: var(--safe-left);
+      padding-right: var(--safe-right)
     }
     .tm-modal.active { display: flex }
 
@@ -3271,9 +3275,9 @@
     <div class="modal">
       <h2 id="profileEditorTitle" data-i18n="new_profile">New Profile</h2>
       <div id="peWarning" class="tg-warning"></div>
-      <div class="form-group"><label data-i18n="nickname">Nickname</label><input id="peNick" maxlength="32" placeholder="My Server">
+      <div class="form-group"><label data-i18n="nickname">Nickname</label><input id="peNick" maxlength="32" placeholder="My Server" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
-      <div class="form-group"><label data-i18n="domain">Domain</label><input id="peDomain" placeholder="t.example.com">
+      <div class="form-group"><label data-i18n="domain">Domain</label><input id="peDomain" placeholder="t.example.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="form-group"><label data-i18n="passphrase">Passphrase</label><input type="password" id="peKey"
           placeholder="..."></div>
@@ -4030,7 +4034,15 @@
         poll_placeholder: 'Poll (open Telegram to view)',
       }
     };
-    var lang = localStorage.getItem('thefeed_lang') || 'fa';
+    // Order: native bridge (iOS/Android) → localStorage → 'fa'.
+    // iOS localStorage is per-origin (host:port) so picking up the
+    // native value first survives an embedded server rebinding to a
+    // new loopback port on each launch.
+    var lang = (function () {
+      try { if (typeof IOS !== 'undefined' && IOS.getLang) { var v = IOS.getLang(); if (v) return v; } } catch (e) { }
+      try { if (typeof Android !== 'undefined' && Android.getLang) { var v2 = Android.getLang(); if (v2) return v2; } } catch (e) { }
+      return localStorage.getItem('thefeed_lang') || 'fa';
+    })();
     function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k }
     function applyLang() {
       var isRtl = lang === 'fa';
@@ -4051,6 +4063,7 @@
       localStorage.setItem('thefeed_lang', l);
       applyLang();
       if (typeof Android !== 'undefined') try { Android.setLang(l) } catch (e) { }
+      if (typeof IOS !== 'undefined' && IOS.setLang) try { IOS.setLang(l) } catch (e) { }
       fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: l }) }).catch(function () { });
     }
 
@@ -4126,7 +4139,10 @@
     });
     function filterChannels() {
       var q = document.getElementById('channelSearch').value.toLowerCase();
-      document.querySelectorAll('.ch-item').forEach(function (el) { el.style.display = el.dataset.name.toLowerCase().includes(q) ? 'flex' : 'none' });
+      document.querySelectorAll('.ch-item').forEach(function (el) {
+        var hay = (el.dataset.name + ' ' + (el.dataset.label || '')).toLowerCase();
+        el.style.display = hay.includes(q) ? 'flex' : 'none';
+      });
     }
 
     // ===== INIT =====
@@ -5552,7 +5568,7 @@
         // No 8.8.8.8 / 1.1.1.1 fallback — an empty resolver list in
         // the URI is the sender's deliberate choice (e.g. they want
         // the recipient to bring their own bank).
-        sharedNick = sharedNick.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 32);
+        sharedNick = sanitizeNickname(sharedNick);
         // Only ask about bank merging when the URI actually carried
         // resolvers — empty list means the sender shared zero, so
         // there's nothing to merge and no prompt to show.
@@ -5664,12 +5680,31 @@
       } catch (e) { showToast(e.message) }
     }
 
+    // sanitizeNickname extracts a clean alias from raw input. If the user
+    // pasted a thefeed:// URI, pulls the n= param. Strips control chars,
+    // the clipboard emoji, newlines, and trims to 32 chars.
+    function sanitizeNickname(raw) {
+      var v = String(raw || '');
+      var m = v.match(/thefeed:\/\/[^\s?#]+(?:\?[^\s#]*)?(?:[?&]n=([^&\s#]*))/i);
+      if (m && m[1]) {
+        try { v = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { v = m[1]; }
+      }
+      // iOS Quick Type appends UI text starting with the clipboard glyph
+      // (U+1F4CB) when the user manually pastes — cut from there.
+      var clipIdx = v.indexOf('📋');
+      if (clipIdx >= 0) v = v.slice(0, clipIdx);
+      // Strip control / zero-width / bidi / BOM characters.
+      v = v.replace(/[\u0000-\u001F\u007F\u200B-\u200F\u2028\u2029\uFEFF]/g, "");
+      v = v.replace(/\s+/g, ' ').trim();
+      return v.slice(0, 32);
+    }
+
     async function saveProfile() {
       var errEl = document.getElementById('peError'); errEl.style.display = 'none';
       // Trim and clamp the nickname server-side too: the maxlength
       // attribute on the input only stops keyboard typing, not paste
       // / programmatic value setting.
-      var nick = document.getElementById('peNick').value.trim().slice(0, 32);
+      var nick = sanitizeNickname(document.getElementById('peNick').value);
       var domain = document.getElementById('peDomain').value.trim();
       var key = document.getElementById('peKey').value;
       if (!domain || !key) { errEl.textContent = t('domain') + ' / ' + t('passphrase'); errEl.style.display = 'block'; return }
@@ -7757,7 +7792,7 @@
       document.getElementById('progressPanel').innerHTML = '';
       var p = document.getElementById('progressPanel');
       p.innerHTML = '<div class="progress-item" id="prog-init" data-last-update="' + Date.now() + '"><button class="progress-close" onclick="this.parentNode.remove()" title="Dismiss">&times;</button><div class="progress-label">' + t('loading') + '</div><div class="progress-bar"><div class="progress-fill" style="width:30%;animation:prog-pulse 1.5s ease-in-out infinite"></div></div></div>';
-      if (mobileQuery.matches) { openChat(); openLog(); }
+      if (mobileQuery.matches) { openChat(); }
     }
     function startAutoRefresh() { if (autoRefreshTimer) return; autoRefreshTimer = setInterval(function () { if (selectedChannel > 0) doRefresh(true) }, 600000) }
     function updateNextFetchDisplay() {

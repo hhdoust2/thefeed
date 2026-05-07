@@ -362,6 +362,19 @@ chmod +x thefeed-client
 
 برنامه در اولین اجرا اجازه‌ی Battery Optimization Exemption را می‌گیرد تا سرویس پس‌زمینه توسط سیستم بسته نشود.
 
+### iOS
+
+نسخه‌ی iOS در حال توسعه است. سورس در پوشه‌ی [`ios/`](ios/) قرار دارد. برای ساخت روی مک:
+
+```
+go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init
+make ios-bind        # ساخت Mobile.xcframework
+make ios-build       # بیلد روی iOS Simulator
+make ios-test        # اجرای تست‌ها
+```
+
+سپس `ios/Thefeed.xcodeproj` را در Xcode باز کنید.
+
 ## ⚙️ تنظیمات DNS
 
 شما به **دو رکورد DNS** نیاز دارید. فرض کنید IP سرور شما `203.0.113.10` است:

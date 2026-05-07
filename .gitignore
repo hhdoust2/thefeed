@@ -30,3 +30,11 @@ todo.md
 
 tmp
 .claude
+
+# iOS build artifacts
+ios/Mobile.xcframework
+ios/build
+ios/DerivedData
+ios/*.xcuserdata
+ios/Thefeed.xcodeproj/xcuserdata
+ios/Thefeed.xcodeproj/project.xcworkspace/xcuserdata

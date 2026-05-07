@@ -12,6 +12,7 @@ DNS-based feed reader for Telegram channels and public X accounts. Designed for 
   sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/sartoopjj/thefeed/main/scripts/install.sh)"
   ```
 - **Android APK** (Android 7.0+): pick `arm64-v8a` for any phone newer than ~2017, `armeabi-v7a` for older 32-bit-only devices.
+- **iOS** (iOS 14+): App Store build planned. Source under [ios/](ios/) — see [iOS development](#ios-development) below.
 
 Public configs to test with: [@thefeedconfig](https://t.me/thefeedconfig).
 
@@ -528,6 +529,31 @@ make vet         # Go vet
 make fmt         # Format code
 make clean       # Remove build artifacts
 ```
+
+## iOS development
+
+Wraps the Go client as a gomobile-bound xcframework consumed by a SwiftUI app under `ios/`. Server runs in-process on `127.0.0.1:<random-port>`; foreground only (iOS does not allow long-lived background servers).
+
+Prereqs on macOS: Xcode 15+, Go 1.22+, gomobile.
+
+```
+go install golang.org/x/mobile/cmd/gomobile@latest
+gomobile init
+```
+
+Common targets:
+
+```
+make ios-bind            # build Mobile.xcframework (iOS device + Simulator)
+make ios-bind-catalyst   # also include Mac Catalyst slice
+make ios-build           # build the app for the Simulator
+make ios-test            # run unit tests on the Simulator
+make ios-list-sims       # list available simulator destinations
+```
+
+Override the default simulator with `IOS_SIM_NAME='iPhone 16'`.
+
+Open `ios/Thefeed.xcodeproj` in Xcode after `make ios-bind` to run from Xcode.
 
 ## Releases (GitHub Actions)
 
