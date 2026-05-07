@@ -93,21 +93,28 @@
         }
         tmRenderPosts({ channel: window._tmCurrentChannel, posts: out });
         if (!scroller) return;
-        // Restore on next frame so layout has flushed. Then re-correct
-        // once more after images load — they grow the prepended block
-        // and would otherwise push the anchor down.
+        // Restore on next frame so layout has flushed. Re-correct as
+        // each prepended image loads, but only as long as the user
+        // hasn't scrolled away from where we put them — otherwise we'd
+        // keep yanking their scroll back for several seconds.
+        var lastFixedTop = -1;
+        var stopAdjusting = false;
         var fix = function () {
+          if (stopAdjusting) return;
+          if (lastFixedTop !== -1 && Math.abs(scroller.scrollTop - lastFixedTop) > 6) {
+            stopAdjusting = true;
+            return;
+          }
           scroller.scrollTop = oldTop + (scroller.scrollHeight - oldHeight);
+          lastFixedTop = scroller.scrollTop;
         };
         requestAnimationFrame(function () {
           fix();
           var imgs = scroller.querySelectorAll('img');
-          var pending = 0;
           for (var k = 0; k < imgs.length; k++) {
             if (!imgs[k].complete) {
-              pending++;
-              imgs[k].addEventListener('load', function () { fix(); }, { once: true });
-              imgs[k].addEventListener('error', function () { fix(); }, { once: true });
+              imgs[k].addEventListener('load', fix, { once: true });
+              imgs[k].addEventListener('error', fix, { once: true });
             }
           }
         });
