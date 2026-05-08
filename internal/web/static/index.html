@@ -4853,10 +4853,16 @@
         renderLatestVersion();
         if (data.hasUpdate && data.downloadURL) {
           if (!manual) {
-            // Skip silently only if the user explicitly hit "Don't
-            // show again" for this version (or downloaded it).
-            var skipKey = 'thefeed_skip_gh_update_' + normalizeVersion(data.latest);
-            if (localStorage.getItem(skipKey) === '1') return;
+            // Server-stored skip survives per-port localStorage wipes.
+            var skipped = '';
+            try {
+              var sx = new XMLHttpRequest();
+              sx.open('GET', '/api/settings', false);
+              sx.send();
+              if (sx.status === 200) skipped = JSON.parse(sx.responseText).skipUpdateVersion || '';
+            } catch (e) { }
+            if (!skipped) skipped = localStorage.getItem('thefeed_skip_gh_update_' + normalizeVersion(data.latest)) === '1' ? data.latest : '';
+            if (normalizeVersion(skipped) === normalizeVersion(data.latest)) return;
           }
           showUpdateDialog(data.latest, data.downloadURL);
         } else if (manual) {
@@ -4887,11 +4893,16 @@
         + '</div></div>';
       document.body.appendChild(overlay);
       var dismiss = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
-      document.getElementById('updateLater').onclick = dismiss;
-      document.getElementById('updateSkip').onclick = function () {
+      var persistSkip = function () {
         try { localStorage.setItem(skipKey, '1'); } catch (e) { }
-        dismiss();
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skipUpdateVersion: newVersion })
+        }).catch(function () { });
       };
+      document.getElementById('updateLater').onclick = dismiss;
+      document.getElementById('updateSkip').onclick = function () { persistSkip(); dismiss(); };
       document.getElementById('updateDownload').onclick = function () {
         try {
           var a = document.createElement('a');
@@ -4899,7 +4910,7 @@
           a.style.display = 'none';
           document.body.appendChild(a); a.click(); a.remove();
         } catch (e) { }
-        try { localStorage.setItem(skipKey, '1'); } catch (e) { }
+        persistSkip();
         dismiss();
       };
     }

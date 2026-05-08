@@ -99,6 +99,8 @@ type ProfileList struct {
 	Debug    bool   `json:"debug,omitempty"`
 	Theme    string `json:"theme,omitempty"`
 	Lang     string `json:"lang,omitempty"`
+	// SkipUpdateVersion is the latest release the user dismissed.
+	SkipUpdateVersion string `json:"skipUpdateVersion,omitempty"`
 	// ResolverBank is the shared pool of DNS resolvers used by all profiles.
 	ResolverBank []string `json:"resolverBank,omitempty"`
 	// ResolverScores stores accumulated performance data for bank resolvers.
@@ -2832,6 +2834,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"lang":               pl.Lang,
 			"scanPromptOff":      pl.ScanPromptOff,
 			"profilePicsEnabled": pl.ProfilePicsEnabled,
+			"skipUpdateVersion":  pl.SkipUpdateVersion,
 			"version":            version.Version,
 			"commit":             version.Commit,
 		})
@@ -2845,6 +2848,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			Lang               *string `json:"lang"`
 			ScanPromptOff      *bool   `json:"scanPromptOff"`
 			ProfilePicsEnabled *bool   `json:"profilePicsEnabled"`
+			SkipUpdateVersion  *string `json:"skipUpdateVersion"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", 400)
@@ -2884,6 +2888,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ProfilePicsEnabled != nil {
 			pl.ProfilePicsEnabled = *req.ProfilePicsEnabled
+		}
+		if req.SkipUpdateVersion != nil {
+			pl.SkipUpdateVersion = *req.SkipUpdateVersion
 		}
 		if err := s.saveProfiles(pl); err != nil {
 			http.Error(w, fmt.Sprintf("save: %v", err), 500)
