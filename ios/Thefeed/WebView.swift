@@ -19,6 +19,12 @@ struct WebView: UIViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: cfg)
         view.allowsBackForwardNavigationGestures = true
         view.scrollView.bounces = true
+        // Don't double-pad the bottom: the page already adds
+        // env(safe-area-inset-bottom) via CSS; the WebView's automatic
+        // content inset would stack on top and leave a huge gap.
+        view.scrollView.contentInsetAdjustmentBehavior = .never
+        view.scrollView.contentInset = .zero
+        view.scrollView.scrollIndicatorInsets = .zero
         view.navigationDelegate = context.coordinator
         context.coordinator.webView = view
 
