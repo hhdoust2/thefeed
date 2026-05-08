@@ -125,22 +125,35 @@
       });
   };
 
-  // Fullscreen image overlay. Tap anywhere or the X button to close.
-  // Tapping the image itself doesn't close (avoids accidents on iOS
-  // double-tap zoom).
+  // Fullscreen image overlay. Tap the backdrop or X to close. Tap on
+  // the image itself does nothing (avoids accidents on iOS double-tap
+  // zoom). Pushes a history entry so back/swipe closes the lightbox
+  // first instead of dismissing the whole telemirror modal.
+  var tmLightboxPushed = false;
+  window.tmCloseLightbox = function () {
+    var d = document.getElementById('tmLightbox');
+    if (!d) return false;
+    d.remove();
+    if (tmLightboxPushed) {
+      tmLightboxPushed = false;
+      try { history.back(); } catch (e) { }
+    }
+    return true;
+  };
   window.tmOpenLightbox = function (src) {
-    var existing = document.getElementById('tmLightbox');
-    if (existing) existing.remove();
+    window.tmCloseLightbox();
     var d = document.createElement('div');
     d.id = 'tmLightbox';
     d.innerHTML =
       '<button class="tm-lightbox-close" type="button" aria-label="Close">×</button>' +
       '<img src="' + tmEscAttr(src) + '" referrerpolicy="no-referrer" alt="">';
-    var close = function () { d.remove(); };
     d.addEventListener('click', function (e) {
-      if (e.target === d || e.target.classList.contains('tm-lightbox-close')) close();
+      if (e.target === d || e.target.classList.contains('tm-lightbox-close')) {
+        window.tmCloseLightbox();
+      }
     });
     document.body.appendChild(d);
+    try { history.pushState({ view: 'tmLightbox' }, ''); tmLightboxPushed = true; } catch (e) { }
   };
 
   // Telegram wraps every emoji in <i class="emoji" style="background-image:url(...)"><b>X</b></i>
@@ -218,16 +231,29 @@
     document.body.classList.remove('tm-no-scroll');
     var sb = document.getElementById('tmSidebar');
     if (sb) sb.classList.remove('open');
-    if (tmHistoryPushed) {
-      tmHistoryPushed = false;
-      try { history.back(); } catch (e) { }
-    }
+    var steps = (tmHistoryPushed ? 1 : 0) + (tmChannelViewPushed ? 1 : 0);
+    tmHistoryPushed = false;
+    tmChannelViewPushed = false;
+    if (steps > 0) { try { history.go(-steps); } catch (e) { } }
   };
 
   // Hardware / browser back: if our modal is the top of the history
   // stack, intercept and close without re-popping (history already
   // popped us).
   window.addEventListener('popstate', function () {
+    // Layered back: lightbox → mobile sidebar reopen → modal close.
+    if (document.getElementById('tmLightbox')) {
+      tmLightboxPushed = false;
+      var lb = document.getElementById('tmLightbox');
+      if (lb) lb.remove();
+      return;
+    }
+    if (tmChannelViewPushed && tmIsMobileLayout()) {
+      tmChannelViewPushed = false;
+      var sb1 = document.getElementById('tmSidebar');
+      if (sb1) sb1.classList.add('open');
+      return;
+    }
     var modal = document.getElementById('telemirrorModal');
     if (modal && modal.classList.contains('active')) {
       modal.classList.remove('active');
@@ -235,6 +261,7 @@
       var sb = document.getElementById('tmSidebar');
       if (sb) sb.classList.remove('open');
       tmHistoryPushed = false;
+      tmChannelViewPushed = false;
     }
   });
 
@@ -308,11 +335,16 @@
     box.innerHTML = html || '<div class="tm-empty">' + tmEsc(tmI18n('telemirror_pick_channel', 'Pick a channel')) + '</div>';
   }
 
+  // Mobile: track that the sidebar collapsed into channel view so the
+  // back button reopens it instead of dismissing the whole modal.
+  var tmChannelViewPushed = false;
   window.tmSelectFromClick = function (username) {
     tmSelect(username);
-    // Mobile: collapse the sidebar drawer after picking.
     var sb = document.getElementById('tmSidebar');
     if (sb) sb.classList.remove('open');
+    if (tmIsMobileLayout() && !tmChannelViewPushed) {
+      try { history.pushState({ view: 'tmChannel' }, ''); tmChannelViewPushed = true; } catch (e) { }
+    }
   };
 
   function tmShowError(msg) {
