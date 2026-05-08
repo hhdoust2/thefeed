@@ -10,14 +10,14 @@ import (
 )
 
 func TestNewServerEmptyDir(t *testing.T) {
-	if _, err := NewServer(""); err == nil {
+	if _, err := NewServer("", 0); err == nil {
 		t.Errorf("NewServer(\"\") succeeded, want error")
 	}
 }
 
 func TestServerLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	s, err := NewServer(dir)
+	s, err := NewServer(dir, 0)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestServerLifecycle(t *testing.T) {
 }
 
 func TestStopIsIdempotent(t *testing.T) {
-	s, err := NewServer(t.TempDir())
+	s, err := NewServer(t.TempDir(), 0)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestStopIsIdempotent(t *testing.T) {
 
 func TestStopReleasesPort(t *testing.T) {
 	dir := t.TempDir()
-	s, err := NewServer(dir)
+	s, err := NewServer(dir, 0)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

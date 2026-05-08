@@ -7,6 +7,7 @@ package mobile
 import (
 	"errors"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/sartoopjj/thefeed/internal/web"
@@ -24,15 +25,24 @@ type Server struct {
 	done    chan struct{}
 }
 
-// NewServer starts a server on a kernel-assigned port. dataDir must be
-// a writable, app-private directory (e.g. NSDocumentDirectory on iOS).
-func NewServer(dataDir string) (*Server, error) {
+// NewServer starts a server on 127.0.0.1. preferredPort=0 picks a
+// kernel-assigned port; a positive value is tried first and falls
+// back to kernel-assigned on bind failure. dataDir must be a writable
+// app-private directory (e.g. NSDocumentDirectory on iOS).
+func NewServer(dataDir string, preferredPort int) (*Server, error) {
 	if dataDir == "" {
 		return nil, errors.New("mobile: dataDir is empty")
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
+	var ln net.Listener
+	var err error
+	if preferredPort > 0 {
+		ln, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(preferredPort)))
+	}
+	if ln == nil {
+		ln, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
