@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import java.io.File
-import InetSocketAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 
 class ThefeedService : Service() {
