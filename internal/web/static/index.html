@@ -3845,6 +3845,7 @@
         update_download_hint: 'برای دانلود نسخه جدید روی دکمه زیر کلیک کنید:',
         update_download_btn: 'دانلود',
         update_later_btn: 'بعداً',
+        update_skip_btn: 'دیگر نمایش نده',
         channel_mgmt_note: 'قابلیت مدیریت کانال نیاز به فعال سازی سمت سرور دارد. اگر توسط ادمین غیرفعال شده باشد، افزودن/حذف کار نمی\u200cکند.',
         channel_mgmt_inactive: 'برای مدیریت کانال\u200cها، ابتدا این پروفایل را فعال کنید.',
         channel_placeholder: 'نام کاربری کانال',
@@ -4100,6 +4101,7 @@
         update_download_hint: 'Click the button below to download the new version:',
         update_download_btn: 'Download',
         update_later_btn: 'Later',
+        update_skip_btn: "Don't show again",
         channel_mgmt_note: 'Channel management requires server-side support. If disabled by the server admin, adding/removing channels will not work.',
         channel_mgmt_inactive: 'Switch to this profile first to manage its channels.',
         channel_placeholder: 'channel_username',
@@ -4851,10 +4853,10 @@
         renderLatestVersion();
         if (data.hasUpdate && data.downloadURL) {
           if (!manual) {
-            // Don't nag the same user about the same version twice.
-            var seenKey = 'thefeed_seen_gh_update_' + normalizeVersion(data.latest);
-            if (localStorage.getItem(seenKey) === '1') return;
-            localStorage.setItem(seenKey, '1');
+            // Skip silently only if the user explicitly hit "Don't
+            // show again" for this version (or downloaded it).
+            var skipKey = 'thefeed_skip_gh_update_' + normalizeVersion(data.latest);
+            if (localStorage.getItem(skipKey) === '1') return;
           }
           showUpdateDialog(data.latest, data.downloadURL);
         } else if (manual) {
@@ -4866,39 +4868,39 @@
     }
 
     function showUpdateDialog(newVersion, url) {
-      // Re-use the existing modal styling. Two buttons: download (opens
-      // the binary URL in a new tab / hands off to system app on Android)
-      // and later (just dismisses).
       var msg = (t('update_available') || 'New version available: {v}').replace('{v}', newVersion);
       var hint = t('update_download_hint') || 'Download the new version below.';
       var dl = t('update_download_btn') || 'Download';
       var later = t('update_later_btn') || 'Later';
+      var skip = t('update_skip_btn') || "Don't show again";
+      var skipKey = 'thefeed_skip_gh_update_' + normalizeVersion(newVersion);
       var overlay = document.createElement('div');
       overlay.className = 'modal-overlay active';
       overlay.innerHTML = '<div class="modal" style="max-width:380px">'
         + '<h2 style="margin-top:0">' + esc(msg) + '</h2>'
         + '<p style="font-size:13px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">' + esc(hint) + '</p>'
         + '<p style="font-size:11px;color:var(--text-dim);margin-bottom:16px;word-break:break-all"><code>' + esc(url) + '</code></p>'
-        + '<div class="modal-actions">'
+        + '<div class="modal-actions" style="flex-wrap:wrap;gap:6px">'
+        + '  <button class="btn btn-flat" id="updateSkip">' + esc(skip) + '</button>'
         + '  <button class="btn btn-flat" id="updateLater">' + esc(later) + '</button>'
         + '  <button class="btn btn-primary" id="updateDownload">' + esc(dl) + '</button>'
         + '</div></div>';
       document.body.appendChild(overlay);
-      document.getElementById('updateLater').onclick = function () {
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      var dismiss = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      document.getElementById('updateLater').onclick = dismiss;
+      document.getElementById('updateSkip').onclick = function () {
+        try { localStorage.setItem(skipKey, '1'); } catch (e) { }
+        dismiss();
       };
       document.getElementById('updateDownload').onclick = function () {
         try {
           var a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
+          a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
           a.style.display = 'none';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
+          document.body.appendChild(a); a.click(); a.remove();
         } catch (e) { }
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        try { localStorage.setItem(skipKey, '1'); } catch (e) { }
+        dismiss();
       };
     }
 
@@ -7130,12 +7132,27 @@
     // of those from the close-confirmation dialog.
     window.handleAndroidBack = async function () {
       if (closeMediaLightbox()) return;
-      // Telemirror has its own full-screen modal (.tm-modal, not
-      // .modal-overlay). Drawer first, then modal, then anything else.
+      // Telemirror layered back: lightbox → mobile sidebar reopen →
+      // drawer close → modal close. Mirrors the popstate flow used on
+      // platforms that fire popstate naturally.
+      var tmLb = document.getElementById('tmLightbox');
+      if (tmLb) {
+        if (typeof tmCloseLightbox === 'function') tmCloseLightbox();
+        else tmLb.remove();
+        return;
+      }
       var tmModal = document.getElementById('telemirrorModal');
       if (tmModal && tmModal.classList.contains('active')) {
         var tmSb = document.getElementById('tmSidebar');
-        if (tmSb && tmSb.classList.contains('open')) {
+        var tmMenu = document.querySelector('.tm-menu');
+        var tmIsMobile = !!(tmMenu && getComputedStyle(tmMenu).display !== 'none');
+        // Mobile + drawer closed (channel view): reopen drawer instead
+        // of leaving telemirror.
+        if (tmIsMobile && tmSb && !tmSb.classList.contains('open')) {
+          tmSb.classList.add('open');
+          return;
+        }
+        if (tmSb && tmSb.classList.contains('open') && !tmIsMobile) {
           tmSb.classList.remove('open');
           return;
         }
