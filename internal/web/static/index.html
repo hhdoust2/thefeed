@@ -1207,6 +1207,25 @@
       backdrop-filter: blur(6px);
     }
     .tm-lightbox-close:hover { background: rgba(255,255,255,.28); }
+    .donate-addr-row {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface, var(--bg-elevated, var(--bg)));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      direction: ltr;
+    }
+    .donate-addr {
+      flex: 1; min-width: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      color: var(--text);
+    }
+    .donate-thanks { margin-top: 14px; font-size: 13px; color: var(--text-dim); text-align: center; }
+    .donate-body { font-size: 13px; line-height: 1.7; }
+
     .tm-scroll-down {
       position: absolute;
       bottom: max(20px, env(safe-area-inset-bottom));
@@ -3114,9 +3133,11 @@
           channels yet</div>
       </div>
       <div class="sidebar-footer">
-        TELEGRAM: <a href="https://t.me/networkti" target="_blank">@networkti</a>
+        <a href="https://t.me/networkti" target="_blank" data-i18n="telegram">Telegram</a>
         &middot;
-        <a href="https://github.com/sartoopjj/thefeed" target="_blank">GitHub</a>
+        <a href="https://github.com/sartoopjj/thefeed" target="_blank" data-i18n="github">GitHub</a>
+        &middot;
+        <a href="#" onclick="event.preventDefault();openDonate()" data-i18n="donate">Donate</a>
         &middot;
         <a href="https://sartoopjj.github.io/thefeed/privacy-policy.html" target="_blank" data-i18n="privacy_policy">Privacy</a>
       </div>
@@ -3176,6 +3197,29 @@
       <div class="progress-panel" id="progressPanel"></div>
       <div class="log-toggle" onclick="toggleLog()"><span>LOG</span><span id="logToggleIcon">&#9654;</span></div>
       <div class="log-panel hidden" id="logPanel"></div>
+    </div>
+  </div>
+
+  <!-- DONATE MODAL -->
+  <div class="modal-overlay" id="donateModal" onclick="if(event.target===this)closeDonate()">
+    <div class="modal" style="max-width:440px">
+      <h2 data-i18n="donate">Donate</h2>
+      <div class="donate-body" data-i18n-body="donate_body" dir="auto">
+        Send any amount in <b>USDT</b> or <b>USDC</b> on:
+        <ul style="margin:8px 0 12px 0;padding-inline-start:20px">
+          <li>Polygon</li>
+          <li>BNB Chain</li>
+        </ul>
+      </div>
+      <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px" data-i18n="wallet_address">Wallet address</label>
+      <div class="donate-addr-row">
+        <code id="donateAddr" class="donate-addr">0xe73f022f668c57cce79feccd875ac7332311013a</code>
+        <button class="btn btn-flat" onclick="copyDonateAddr()" data-i18n="copy">Copy</button>
+      </div>
+      <div class="donate-thanks" data-i18n="donate_thanks" dir="auto">Thanks for your support ❤️</div>
+      <div style="margin-top:16px;text-align:end">
+        <button class="btn btn-primary" onclick="closeDonate()" data-i18n="close">Close</button>
+      </div>
     </div>
   </div>
 
@@ -3865,6 +3909,12 @@
         scanner_load_presets: 'بارگذاری لیست پیش‌فرض',
         scanner_preset_active: 'ریزالورهای پیش‌فرض بارگذاری شد',
         privacy_policy: 'حریم خصوصی',
+        telegram: 'تلگرام',
+        github: 'گیت‌هاب',
+        donate: 'حمایت مالی',
+        donate_body: 'برای حمایت از من می‌تونید مبلغ دلخواه‌تون رو به صورت <b>USDT</b> یا <b>USDC</b> روی شبکه‌های زیر بفرستید: <ul style="margin:8px 0 12px 0;padding-inline-start:20px"><li>Polygon</li><li>BNB Chain</li></ul>',
+        wallet_address: 'آدرس ولت',
+        donate_thanks: 'ممنون از حمایت‌تون ❤️',
         telemirror_load_older: 'بارگذاری پیام‌های قدیمی‌تر',
         telemirror_no_older: 'پیام قدیمی‌تری وجود ندارد',
         telemirror_load_older_failed: 'خطا در بارگذاری پیام‌های قدیمی',
@@ -4114,6 +4164,12 @@
         scanner_load_presets: 'Load Presets',
         scanner_preset_active: 'Default resolvers loaded',
         privacy_policy: 'Privacy',
+        telegram: 'Telegram',
+        github: 'GitHub',
+        donate: 'Donate',
+        donate_body: 'Send any amount in <b>USDT</b> or <b>USDC</b> on: <ul style="margin:8px 0 12px 0;padding-inline-start:20px"><li>Polygon</li><li>BNB Chain</li></ul>',
+        wallet_address: 'Wallet address',
+        donate_thanks: 'Thanks for your support ❤️',
         telemirror_load_older: 'Load older posts',
         telemirror_no_older: 'No older posts',
         telemirror_load_older_failed: 'Failed to load older posts',
@@ -4220,6 +4276,7 @@
       document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.dataset.i18n) });
       document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.placeholder = t(el.dataset.i18nPh) });
       document.querySelectorAll('[data-i18n-title]').forEach(function (el) { el.title = t(el.dataset.i18nTitle) });
+      document.querySelectorAll('[data-i18n-body]').forEach(function (el) { el.innerHTML = t(el.dataset.i18nBody) });
       var lf = document.getElementById('langFa'); if (lf) lf.classList.toggle('active-lang', lang === 'fa');
       var le = document.getElementById('langEn'); if (le) le.classList.toggle('active-lang', lang === 'en');
       document.getElementById('sendInput').style.direction = isRtl ? 'rtl' : 'ltr';
@@ -8036,6 +8093,14 @@
     }
 
     // ===== COPY MSG =====
+    // ===== DONATE MODAL =====
+    function openDonate() { document.getElementById('donateModal').classList.add('active'); }
+    function closeDonate() { document.getElementById('donateModal').classList.remove('active'); }
+    function copyDonateAddr() {
+      var v = document.getElementById('donateAddr').textContent.trim();
+      navigator.clipboard.writeText(v).then(function () { showToast(t('copied')) }).catch(function () { });
+    }
+
     function copyMsg(idx) {
       var text = currentMsgTexts[idx]; if (text === undefined) return;
       navigator.clipboard.writeText(text).then(function () { showToast(t('msg_copied')) }).catch(function () { });

@@ -127,21 +127,19 @@
 
   // Fullscreen image overlay. Tap the backdrop or X to close. Tap on
   // the image itself does nothing (avoids accidents on iOS double-tap
-  // zoom). Pushes a history entry so back/swipe closes the lightbox
-  // first instead of dismissing the whole telemirror modal.
+  // Lightbox: open pushes a history entry, close just calls
+  // history.back() — the popstate handler is the only thing that
+  // removes the DOM. That way explicit close and browser-back take
+  // the exact same path and no layer gets confused.
   var tmLightboxPushed = false;
   window.tmCloseLightbox = function () {
-    var d = document.getElementById('tmLightbox');
-    if (!d) return false;
-    d.remove();
-    if (tmLightboxPushed) {
-      tmLightboxPushed = false;
-      try { history.back(); } catch (e) { }
-    }
-    return true;
+    if (!document.getElementById('tmLightbox')) return;
+    if (tmLightboxPushed) { try { history.back(); } catch (e) { } }
+    else { document.getElementById('tmLightbox').remove(); }
   };
   window.tmOpenLightbox = function (src) {
-    window.tmCloseLightbox();
+    var existing = document.getElementById('tmLightbox');
+    if (existing) existing.remove();
     var d = document.createElement('div');
     d.id = 'tmLightbox';
     d.innerHTML =
@@ -224,25 +222,40 @@
     tmLoadChannels();
   };
 
+  // Suppress N popstate events while we unwind the history layers
+  // ourselves. Without this, history.go(-N) would fire popstates that
+  // re-open the sidebar / lightbox we just closed.
+  var tmSuppressPopstate = 0;
+
   window.closeTelemirror = function () {
     var modal = document.getElementById('telemirrorModal');
     if (!modal || !modal.classList.contains('active')) return;
+    var lb = document.getElementById('tmLightbox');
+    if (lb) lb.remove();
     modal.classList.remove('active');
     document.body.classList.remove('tm-no-scroll');
     var sb = document.getElementById('tmSidebar');
     if (sb) sb.classList.remove('open');
-    var steps = (tmHistoryPushed ? 1 : 0) + (tmChannelViewPushed ? 1 : 0);
+    var steps = (tmHistoryPushed ? 1 : 0)
+              + (tmChannelViewPushed ? 1 : 0)
+              + (tmLightboxPushed ? 1 : 0);
     tmHistoryPushed = false;
     tmChannelViewPushed = false;
-    if (steps > 0) { try { history.go(-steps); } catch (e) { } }
+    tmLightboxPushed = false;
+    if (steps > 0) {
+      tmSuppressPopstate += steps;
+      try { history.go(-steps); } catch (e) { }
+    }
   };
 
   // Hardware / browser back: if our modal is the top of the history
   // stack, intercept and close without re-popping (history already
   // popped us).
   window.addEventListener('popstate', function () {
+    // Programmatic unwind from closeTelemirror — swallow these.
+    if (tmSuppressPopstate > 0) { tmSuppressPopstate--; return; }
     // Layered back: lightbox → mobile sidebar reopen → modal close.
-    if (document.getElementById('tmLightbox')) {
+    if (tmLightboxPushed) {
       tmLightboxPushed = false;
       var lb = document.getElementById('tmLightbox');
       if (lb) lb.remove();
@@ -254,14 +267,13 @@
       if (sb1) sb1.classList.add('open');
       return;
     }
-    var modal = document.getElementById('telemirrorModal');
-    if (modal && modal.classList.contains('active')) {
-      modal.classList.remove('active');
+    if (tmHistoryPushed) {
+      tmHistoryPushed = false;
+      var modal = document.getElementById('telemirrorModal');
+      if (modal) modal.classList.remove('active');
       document.body.classList.remove('tm-no-scroll');
       var sb = document.getElementById('tmSidebar');
       if (sb) sb.classList.remove('open');
-      tmHistoryPushed = false;
-      tmChannelViewPushed = false;
     }
   });
 
