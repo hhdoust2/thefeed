@@ -1219,8 +1219,9 @@
       flex: 1; min-width: 0;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
-      overflow-wrap: anywhere;
-      word-break: break-all;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       color: var(--text);
     }
     .donate-thanks { margin-top: 14px; font-size: 13px; color: var(--text-dim); text-align: center; }
@@ -3213,7 +3214,9 @@
       </div>
       <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px" data-i18n="wallet_address">Wallet address</label>
       <div class="donate-addr-row">
-        <code id="donateAddr" class="donate-addr">0xe73f022f668c57cce79feccd875ac7332311013a</code>
+        <code id="donateAddr" class="donate-addr"
+              data-full="0xe73f022f668c57cce79feccd875ac7332311013a"
+              title="0xe73f022f668c57cce79feccd875ac7332311013a">0xe73f022f…2311013a</code>
         <button class="btn btn-flat" onclick="copyDonateAddr()" data-i18n="copy">Copy</button>
       </div>
       <div class="donate-thanks" data-i18n="donate_thanks" dir="auto">Thanks for your support ❤️</div>
@@ -8131,7 +8134,8 @@
     function openDonate() { document.getElementById('donateModal').classList.add('active'); }
     function closeDonate() { document.getElementById('donateModal').classList.remove('active'); }
     function copyDonateAddr() {
-      var v = document.getElementById('donateAddr').textContent.trim();
+      var el = document.getElementById('donateAddr');
+      var v = (el.dataset.full || el.textContent).trim();
       navigator.clipboard.writeText(v).then(function () { showToast(t('copied')) }).catch(function () { });
     }
 
