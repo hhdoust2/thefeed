@@ -4387,7 +4387,13 @@
       // Quietly ask GitHub for the latest published client version. Runs in
       // the background so a slow github.com response can't delay startup —
       // if there's an update, the dialog shows up a few seconds later.
-      checkGitHubUpdate(false).catch(function () { });
+      // Skipped on iOS: App Store / TestFlight handles updates there.
+      if (typeof IOS === 'undefined') {
+        checkGitHubUpdate(false).catch(function () { });
+      } else {
+        var ghBtn = document.getElementById('checkGitHubBtn');
+        if (ghBtn) ghBtn.style.display = 'none';
+      }
       try {
         var r = await fetch('/api/status'); var st = await r.json();
         await loadProfiles();

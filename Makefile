@@ -108,17 +108,26 @@ IOS_PROJECT = $(IOS_DIR)/Thefeed.xcodeproj
 # Default simulator: pick the first available iPhone (override with IOS_SIM_NAME='iPhone 17').
 IOS_SIM_NAME ?= $(shell xcrun simctl list devices available 2>/dev/null | awk -F'[()]' '/-- iOS [0-9]/{ios=1;next} /^-- /{ios=0} ios && /iPhone/{print $$1; exit}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//')
 
+# Strip a leading 'v' so MARKETING_VERSION accepts e.g. v0.18.0 / 0.18.0.
+IOS_MARKETING_VERSION = $(patsubst v%,%,$(VERSION))
+# Build number must be a positive integer; commit count is monotonic.
+IOS_BUILD_NUMBER ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
+IOS_LDFLAGS = -X github.com/sartoopjj/thefeed/internal/version.Version=$(VERSION) \
+              -X github.com/sartoopjj/thefeed/internal/version.Commit=$(COMMIT) \
+              -X github.com/sartoopjj/thefeed/internal/version.Date=$(DATE)
+IOS_XCODE_VERSIONS = MARKETING_VERSION="$(IOS_MARKETING_VERSION)" CURRENT_PROJECT_VERSION="$(IOS_BUILD_NUMBER)"
+
 ios-deps:
 	@grep -q "golang.org/x/mobile" go.mod || go get golang.org/x/mobile/bind golang.org/x/mobile/bind/objc
 	go mod tidy
 
 ios-bind: ios-deps
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found. Run: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init"; exit 1; }
-	gomobile bind -iosversion=14.0 -target=ios,iossimulator -o $(IOS_FRAMEWORK) ./mobile
+	gomobile bind -iosversion=14.0 -target=ios,iossimulator -ldflags='$(IOS_LDFLAGS)' -o $(IOS_FRAMEWORK) ./mobile
 
 ios-bind-catalyst: ios-deps
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found"; exit 1; }
-	gomobile bind -iosversion=14.0 -target=ios,iossimulator,maccatalyst -o $(IOS_FRAMEWORK) ./mobile
+	gomobile bind -iosversion=14.0 -target=ios,iossimulator,maccatalyst -ldflags='$(IOS_LDFLAGS)' -o $(IOS_FRAMEWORK) ./mobile
 
 ios-list-sims:
 	xcrun simctl list devices available
@@ -126,11 +135,13 @@ ios-list-sims:
 ios-build: $(IOS_FRAMEWORK)
 	xcodebuild -project $(IOS_PROJECT) -scheme $(IOS_SCHEME) \
 		-destination 'platform=iOS Simulator,name=$(IOS_SIM_NAME)' \
+		$(IOS_XCODE_VERSIONS) \
 		build
 
 ios-test: $(IOS_FRAMEWORK)
 	xcodebuild test -project $(IOS_PROJECT) -scheme $(IOS_SCHEME) \
-		-destination 'platform=iOS Simulator,name=$(IOS_SIM_NAME)'
+		-destination 'platform=iOS Simulator,name=$(IOS_SIM_NAME)' \
+		$(IOS_XCODE_VERSIONS)
 
 $(IOS_FRAMEWORK):
 	$(MAKE) ios-bind

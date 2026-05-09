@@ -244,10 +244,18 @@ jobs:
           go mod tidy
 
       - name: Build Mobile.xcframework
-        run: gomobile bind -iosversion=14.0 -target=ios,iossimulator -o ios/Mobile.xcframework ./mobile
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-X github.com/sartoopjj/thefeed/internal/version.Version=${VERSION} -X github.com/sartoopjj/thefeed/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thefeed/internal/version.Date=${DATE}"
+          gomobile bind -iosversion=14.0 -target=ios,iossimulator -ldflags="${LDFLAGS}" -o ios/Mobile.xcframework ./mobile
 
       - name: Archive (unsigned)
         run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          MARKETING_VERSION=${VERSION#v}
+          BUILD_NUMBER=$(git rev-list --count HEAD)
           xcodebuild \
             -project ios/Thefeed.xcodeproj \
             -scheme Thefeed \
@@ -255,6 +263,8 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/Thefeed.xcarchive \
             archive \
+            MARKETING_VERSION="${MARKETING_VERSION}" \
+            CURRENT_PROJECT_VERSION="${BUILD_NUMBER}" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
