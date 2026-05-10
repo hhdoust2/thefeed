@@ -534,6 +534,12 @@ telegram_login() {
     echo -e "${yellow}This will authenticate with Telegram and save the session.${plain}"
     echo ""
 
+    local was_active=0
+    if systemctl is-active --quiet thefeed-server 2>/dev/null; then
+        was_active=1
+        systemctl stop thefeed-server
+    fi
+
     set -a
     source "$DATA_DIR/thefeed.env"
     set +a
@@ -546,16 +552,19 @@ telegram_login() {
         --api-id "$TELEGRAM_API_ID" \
         --api-hash "$TELEGRAM_API_HASH" \
         --phone "$TELEGRAM_PHONE"
+    local rc=$?
 
-    if [[ $? -ne 0 ]]; then
+    if [[ $rc -ne 0 ]]; then
         echo -e "${red}Telegram login failed${plain}"
         echo -e "${yellow}You can retry later with:${plain}"
         echo -e "  sudo bash install.sh --login"
+        [[ $was_active -eq 1 ]] && systemctl start thefeed-server
         return 1
     fi
 
     chmod 600 "$DATA_DIR/session.json"
     echo -e "${green}Telegram login successful, session saved.${plain}"
+    [[ $was_active -eq 1 ]] && systemctl start thefeed-server
 }
 
 install_service() {
